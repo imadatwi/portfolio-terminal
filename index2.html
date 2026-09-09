@@ -985,40 +985,59 @@ tr[data-tk]:hover{background:var(--bg3);}
 </div>
 <div class="foot">US stocks (NASDAQ / NYSE / AMEX) &middot; price &gt; $3 &middot; volume &gt; 1M &middot; sorted by daily % change &middot; source: TradingView public scanner &middot; click any row to load it in the terminal</div>
 <script>
-var PROXY="https://corsproxy.io/?";
-var SCAN="https://scanner.tradingview.com/america/scan";
-var COLS=["name","description","close","change","change_abs","volume","market_cap_basic"];
-var FILTER=[{left:"type",operation:"in_range",right:["stock"]},{left:"exchange",operation:"in_range",right:["NASDAQ","NYSE","AMEX"]},{left:"close",operation:"greater",right:3},{left:"volume",operation:"greater",right:1000000}];
+var TV="https://scanner.tradingview.com/america/scan?label-product=markets-screener";
+var YH_G="https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=20&scrIds=day_gainers";
+var YH_L="https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=20&scrIds=day_losers";
 var interval=15,timer=null,countdown=15,source="";
-function reqBody(order){return JSON.stringify({columns:COLS,filter:FILTER,sort:{sortBy:"change",sortOrder:order},range:[0,20],options:{lang:"en"},markets:["america"],symbols:{query:{types:[]},tickers:[]}});}
-function scan(order){
-  var opt={method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:reqBody(order)};
-  return fetch(SCAN,opt).then(function(r){if(!r.ok)throw new Error("d"+r.status);source="direct";return r.json();})
-  .catch(function(){return fetch(PROXY+encodeURIComponent(SCAN),opt).then(function(r){if(!r.ok)throw new Error("proxy "+r.status);source="proxy";return r.json();});})
-  .then(function(j){return (j&&j.data)||[];});
+// Try a URL through direct + several CORS proxies, in order, until one works.
+function postBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://proxy.cors.sh/"+u;}];}
+function getBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u);},function(u){return "https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u);}];}
+function tryFetch(url,opt,builders,i){
+  i=i||0;
+  return fetch(builders[i](url),opt).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .catch(function(e){if(i+1<builders.length)return tryFetch(url,opt,builders,i+1);throw e;});
+}
+function tvBody(order){return JSON.stringify({columns:["name","description","close","change","change_abs","volume","market_cap_basic"],filter:[{left:"type",operation:"in_range",right:["stock"]},{left:"exchange",operation:"in_range",right:["NASDAQ","NYSE","AMEX"]},{left:"close",operation:"greater",right:3},{left:"volume",operation:"greater",right:1000000}],sort:{sortBy:"change",sortOrder:order},range:[0,20],options:{lang:"en"},markets:["america"],symbols:{query:{types:[]},tickers:[]}});}
+function fromTV(order){
+  var opt={method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:tvBody(order)};
+  return tryFetch(TV,opt,postBuilders()).then(function(j){
+    return ((j&&j.data)||[]).map(function(r){var d=r.d||[],p=(r.s||"").split(":");return {tk:p[1]||d[0]||"",ex:p[0]||"",name:d[1]||d[0]||"",close:d[2],chgPct:d[3],chgAbs:d[4],vol:d[5],cap:d[6]};});
+  });
+}
+function fromYH(url){
+  return tryFetch(url,{},getBuilders()).then(function(j){
+    var res=j&&j.finance&&j.finance.result&&j.finance.result[0];
+    return ((res&&res.quotes)||[]).map(function(x){return {tk:x.symbol||"",ex:(x.fullExchangeName||"").replace("NasdaqGS","NASDAQ").replace("NasdaqGM","NASDAQ"),name:x.shortName||x.longName||x.symbol,close:x.regularMarketPrice,chgPct:x.regularMarketChangePercent,chgAbs:x.regularMarketChange,vol:x.regularMarketVolume,cap:x.marketCap};});
+  });
+}
+function getMovers(){
+  return Promise.all([fromTV("desc"),fromTV("asc")]).then(function(r){
+    if(r[0].length&&r[1].length){source="TradingView";return r;}
+    throw new Error("TradingView returned no rows");
+  }).catch(function(){
+    return Promise.all([fromYH(YH_G),fromYH(YH_L)]).then(function(r){source="Yahoo (fallback)";return r;});
+  });
 }
 function num(n){return typeof n==="number"?n:parseFloat(n);}
 function money(n){n=num(n);if(isNaN(n))return "—";return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function vol(n){n=num(n);if(isNaN(n))return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n);}
 function cap(n){n=num(n);if(isNaN(n)||!n)return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(2)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function rowsHtml(data){
-  if(!data||!data.length)return '<tr><td colspan="8" class="empty">No data returned</td></tr>';
+function rowsHtml(rows){
+  if(!rows||!rows.length)return '<tr><td colspan="8" class="empty">No data returned</td></tr>';
   var out="";
-  for(var i=0;i<data.length;i++){
-    var r=data[i],d=r.d||[],sym=r.s||"";
-    var parts=sym.split(":"),ex=parts[0]||"",tk=parts[1]||d[0]||"";
-    var name=d[0],desc=d[1],close=d[2],chg=num(d[3]),chgAbs=num(d[4]),vv=d[5],mc=d[6];
+  for(var i=0;i<rows.length;i++){
+    var o=rows[i],chg=num(o.chgPct);
     var cls=chg>=0?"up":"dn",sg=chg>=0?"+":"";
-    out+='<tr data-tk="'+esc(tk)+'">'
+    out+='<tr data-tk="'+esc(o.tk)+'">'
       +'<td class="rk">'+(i+1)+'</td>'
-      +'<td class="sym">'+esc(tk)+'<span class="ex">'+esc(ex)+'</span></td>'
-      +'<td class="nm" title="'+esc(desc||name)+'">'+esc(desc||name)+'</td>'
-      +'<td class="px">'+money(close)+'</td>'
-      +'<td class="'+cls+'">'+sg+money(chgAbs)+'</td>'
+      +'<td class="sym">'+esc(o.tk)+'<span class="ex">'+esc(o.ex)+'</span></td>'
+      +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
+      +'<td class="px">'+money(o.close)+'</td>'
+      +'<td class="'+cls+'">'+sg+money(o.chgAbs)+'</td>'
       +'<td class="'+cls+' pct">'+sg+(isNaN(chg)?"—":chg.toFixed(2))+'%</td>'
-      +'<td class="vl">'+vol(vv)+'</td>'
-      +'<td class="mc">'+cap(mc)+'</td>'
+      +'<td class="vl">'+vol(o.vol)+'</td>'
+      +'<td class="mc">'+cap(o.cap)+'</td>'
       +'</tr>';
   }
   return out;
@@ -1027,11 +1046,16 @@ function setStatus(m,err){var el=document.getElementById("status");if(el){el.tex
 function stamp(){var u=document.getElementById("updated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString()+(source?(" · via "+source):"");}
 function load(){
   setStatus("Fetching…",false);
-  Promise.all([scan("desc"),scan("asc")]).then(function(res){
+  getMovers().then(function(res){
     document.getElementById("gainBody").innerHTML=rowsHtml(res[0]);
     document.getElementById("loseBody").innerHTML=rowsHtml(res[1]);
     stamp();setStatus("● Live",false);
-  }).catch(function(e){setStatus("Error: "+e.message+" — will retry",true);});
+  }).catch(function(e){
+    setStatus("All sources failed ("+e.message+") — retrying. If this persists, popups/CORS may be blocked.",true);
+    var msg='<tr><td colspan="8" class="empty">Could not reach TradingView or Yahoo (CORS/proxy blocked). Retrying every '+interval+'s…</td></tr>';
+    document.getElementById("gainBody").innerHTML=msg;
+    document.getElementById("loseBody").innerHTML=msg;
+  });
 }
 function tick(){countdown--;if(countdown<=0){countdown=interval;load();}var c=document.getElementById("cd");if(c)c.textContent=countdown+"s";}
 function start(){if(timer)clearInterval(timer);countdown=interval;load();timer=setInterval(tick,1000);}
