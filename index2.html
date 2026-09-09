@@ -84,6 +84,8 @@ body {
   display: flex;
   gap: 20px;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .hdr-stat { display: flex; flex-direction: column; }
 .hdr-stat-lbl { font-size: 8px; color: var(--t3); text-transform: uppercase; letter-spacing: 1px; }
@@ -92,6 +94,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 .live-dot {
   width: 7px; height: 7px;
@@ -338,7 +341,7 @@ body {
       <input id="searchInput" type="text" placeholder="ADD TICKER (e.g. AAPL)" />
     </div>
     <button class="btn" onclick="addStock()">ADD</button>
-    <button class="btn" onclick="openMovers()" style="background:var(--bg3);border:1px solid var(--border2)">▲▼ MOVERS</button>
+    <button class="btn" onclick="openMovers()" style="background:var(--amber);color:#07090f;font-weight:bold">▲▼ MOVERS</button>
   </div>
 </div>
 
