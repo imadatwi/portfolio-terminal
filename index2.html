@@ -324,12 +324,12 @@ body {
 </head>
 <body>
 
-<!-- FLOATING MOVERS BUTTON (fixed, centered, cannot be clipped) -->
+<!-- FLOATING MOVERS BUTTON (fixed, top-center, cannot be clipped, does not block the dashboard) -->
 <button id="moversFab" onclick="openMovers()"
-  style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:999999;
+  style="position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:999999;
          background:var(--amber);color:#07090f;font-weight:bold;font-family:var(--font);
-         font-size:16px;letter-spacing:2px;border:2px solid #fff;border-radius:6px;
-         padding:16px 34px;cursor:pointer;box-shadow:0 6px 28px rgba(0,0,0,.7)">
+         font-size:13px;letter-spacing:2px;border:2px solid #fff;border-radius:6px;
+         padding:8px 22px;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.7)">
   ▲▼ MARKET MOVERS
 </button>
 
@@ -496,7 +496,7 @@ function setChartInterval(iv, btn) {
 // ═══════════════════════════════════════════
 // PRICE FETCHING
 // ═══════════════════════════════════════════
-const PROXY = 'https://corsproxy.io/?';
+const PROXY = 'https://corsproxy.io/?url=';
 const YF    = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=';
 
 async function fetchPrices(batch) {
