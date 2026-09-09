@@ -338,6 +338,7 @@ body {
       <input id="searchInput" type="text" placeholder="ADD TICKER (e.g. AAPL)" />
     </div>
     <button class="btn" onclick="addStock()">ADD</button>
+    <button class="btn" onclick="openMovers()" style="background:var(--bg3);border:1px solid var(--border2)">▲▼ MOVERS</button>
   </div>
 </div>
 
@@ -902,6 +903,160 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 // ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// MARKET MOVERS — live top 20 winners / losers (separate window)
+// Pulls from TradingView's public scanner endpoint (no account needed),
+// falling back to the same corsproxy the app uses if CORS blocks it.
+// ═══════════════════════════════════════════
+const MOVERS_HTML = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Market Movers — Live</title>
+<style>
+:root{--bg0:#07090f;--bg1:#0c1118;--bg2:#111b27;--bg3:#162030;--border:#1c2e42;--border2:#243a52;--green:#00c47a;--red:#f03050;--amber:#f0a800;--t1:#d0e4f4;--t2:#6090b8;--t3:#304860;--font:'Courier New','Lucida Console',monospace;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg0);color:var(--t1);font-family:var(--font);font-size:12px;}
+.top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg1);border-bottom:2px solid var(--amber);position:sticky;top:0;z-index:5;flex-wrap:wrap;}
+.title{font-size:15px;font-weight:bold;color:var(--amber);letter-spacing:2px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.4s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.meta{font-size:10px;color:var(--t2);}
+.spacer{flex:1;}
+.ctrl{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--t2);}
+select,button{font-family:var(--font);font-size:11px;background:var(--bg3);color:var(--t1);border:1px solid var(--border2);padding:4px 8px;cursor:pointer;}
+button:hover{background:var(--border2);}
+.cd{color:var(--amber);min-width:34px;text-align:right;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 16px;}
+@media(max-width:860px){.grid{grid-template-columns:1fr;}}
+.panel{background:var(--bg1);border:1px solid var(--border);}
+.phdr{padding:8px 12px;font-size:11px;font-weight:bold;letter-spacing:1px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;}
+.phdr.win{color:var(--green);border-bottom-color:var(--green);}
+.phdr.los{color:var(--red);border-bottom-color:var(--red);}
+table{width:100%;border-collapse:collapse;}
+th{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);}
+th.l,td.l{text-align:left;}
+td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--bg2);white-space:nowrap;}
+tr[data-tk]{cursor:pointer;}
+tr[data-tk]:hover{background:var(--bg3);}
+.rk{color:var(--t3);width:26px;text-align:left;}
+.sym{color:var(--amber);font-weight:bold;text-align:left;}
+.ex{color:var(--t3);font-size:8px;margin-left:5px;font-weight:normal;}
+.nm{color:var(--t2);text-align:left;max-width:170px;overflow:hidden;text-overflow:ellipsis;}
+.px{color:var(--t1);}
+.pct{font-weight:bold;}
+.vl,.mc{color:var(--t2);}
+.up{color:var(--green);}.dn{color:var(--red);}
+.empty{color:var(--t3);text-align:center;padding:20px;}
+.foot{padding:8px 16px;font-size:9px;color:var(--t3);border-top:1px solid var(--border);}
+#status{font-size:10px;}
+</style></head>
+<body>
+<div class="top">
+  <div class="dot"></div>
+  <div class="title">MARKET MOVERS</div>
+  <div class="meta" id="updated">Loading…</div>
+  <div id="status">Init</div>
+  <div class="spacer"></div>
+  <div class="ctrl">REFRESH
+    <select onchange="setIv(this.value)">
+      <option value="10">10s</option>
+      <option value="15" selected>15s</option>
+      <option value="30">30s</option>
+      <option value="60">60s</option>
+    </select>
+    <span class="cd" id="cd">15s</span>
+    <button id="refreshBtn">↻ NOW</button>
+  </div>
+</div>
+<div class="grid">
+  <div class="panel">
+    <div class="phdr win"><span>▲ TOP 20 GAINERS</span><span>DAILY</span></div>
+    <table><thead><tr>
+      <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
+      <th>PRICE</th><th>CHG</th><th>CHG%</th><th>VOL</th><th>MKT CAP</th>
+    </tr></thead><tbody id="gainBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table>
+  </div>
+  <div class="panel">
+    <div class="phdr los"><span>▼ TOP 20 LOSERS</span><span>DAILY</span></div>
+    <table><thead><tr>
+      <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
+      <th>PRICE</th><th>CHG</th><th>CHG%</th><th>VOL</th><th>MKT CAP</th>
+    </tr></thead><tbody id="loseBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table>
+  </div>
+</div>
+<div class="foot">US stocks (NASDAQ / NYSE / AMEX) &middot; price &gt; $3 &middot; volume &gt; 1M &middot; sorted by daily % change &middot; source: TradingView public scanner &middot; click any row to load it in the terminal</div>
+<script>
+var PROXY="https://corsproxy.io/?";
+var SCAN="https://scanner.tradingview.com/america/scan";
+var COLS=["name","description","close","change","change_abs","volume","market_cap_basic"];
+var FILTER=[{left:"type",operation:"in_range",right:["stock"]},{left:"exchange",operation:"in_range",right:["NASDAQ","NYSE","AMEX"]},{left:"close",operation:"greater",right:3},{left:"volume",operation:"greater",right:1000000}];
+var interval=15,timer=null,countdown=15,source="";
+function reqBody(order){return JSON.stringify({columns:COLS,filter:FILTER,sort:{sortBy:"change",sortOrder:order},range:[0,20],options:{lang:"en"},markets:["america"],symbols:{query:{types:[]},tickers:[]}});}
+function scan(order){
+  var opt={method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:reqBody(order)};
+  return fetch(SCAN,opt).then(function(r){if(!r.ok)throw new Error("d"+r.status);source="direct";return r.json();})
+  .catch(function(){return fetch(PROXY+encodeURIComponent(SCAN),opt).then(function(r){if(!r.ok)throw new Error("proxy "+r.status);source="proxy";return r.json();});})
+  .then(function(j){return (j&&j.data)||[];});
+}
+function num(n){return typeof n==="number"?n:parseFloat(n);}
+function money(n){n=num(n);if(isNaN(n))return "—";return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function vol(n){n=num(n);if(isNaN(n))return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n);}
+function cap(n){n=num(n);if(isNaN(n)||!n)return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(2)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function rowsHtml(data){
+  if(!data||!data.length)return '<tr><td colspan="8" class="empty">No data returned</td></tr>';
+  var out="";
+  for(var i=0;i<data.length;i++){
+    var r=data[i],d=r.d||[],sym=r.s||"";
+    var parts=sym.split(":"),ex=parts[0]||"",tk=parts[1]||d[0]||"";
+    var name=d[0],desc=d[1],close=d[2],chg=num(d[3]),chgAbs=num(d[4]),vv=d[5],mc=d[6];
+    var cls=chg>=0?"up":"dn",sg=chg>=0?"+":"";
+    out+='<tr data-tk="'+esc(tk)+'">'
+      +'<td class="rk">'+(i+1)+'</td>'
+      +'<td class="sym">'+esc(tk)+'<span class="ex">'+esc(ex)+'</span></td>'
+      +'<td class="nm" title="'+esc(desc||name)+'">'+esc(desc||name)+'</td>'
+      +'<td class="px">'+money(close)+'</td>'
+      +'<td class="'+cls+'">'+sg+money(chgAbs)+'</td>'
+      +'<td class="'+cls+' pct">'+sg+(isNaN(chg)?"—":chg.toFixed(2))+'%</td>'
+      +'<td class="vl">'+vol(vv)+'</td>'
+      +'<td class="mc">'+cap(mc)+'</td>'
+      +'</tr>';
+  }
+  return out;
+}
+function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
+function stamp(){var u=document.getElementById("updated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString()+(source?(" · via "+source):"");}
+function load(){
+  setStatus("Fetching…",false);
+  Promise.all([scan("desc"),scan("asc")]).then(function(res){
+    document.getElementById("gainBody").innerHTML=rowsHtml(res[0]);
+    document.getElementById("loseBody").innerHTML=rowsHtml(res[1]);
+    stamp();setStatus("● Live",false);
+  }).catch(function(e){setStatus("Error: "+e.message+" — will retry",true);});
+}
+function tick(){countdown--;if(countdown<=0){countdown=interval;load();}var c=document.getElementById("cd");if(c)c.textContent=countdown+"s";}
+function start(){if(timer)clearInterval(timer);countdown=interval;load();timer=setInterval(tick,1000);}
+function setIv(v){interval=parseInt(v,10)||15;countdown=interval;}
+function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
+function bindClicks(){["gainBody","loseBody"].forEach(function(id){var b=document.getElementById(id);if(b)b.addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});});}
+document.getElementById("refreshBtn").addEventListener("click",function(){countdown=interval;load();});
+bindClicks();start();
+<\/script>
+</body></html>`;
+
+function openMovers(){
+  const w = window.open('', 'marketMovers', 'width=1180,height=840,scrollbars=yes,resizable=yes');
+  if(!w){ alert('Popup blocked — please allow popups for this page to open Market Movers.'); return; }
+  w.document.open(); w.document.write(MOVERS_HTML); w.document.close(); w.focus();
+}
+
+function loadTickerFromMovers(ticker){
+  ticker = (ticker || '').toUpperCase();
+  if(!ticker) return;
+  if(STOCKS.find(function(s){ return s.t === ticker; })){ selectStock(ticker); }
+  else { const inp = document.getElementById('searchInput'); inp.value = ticker; addStock(); }
+  try{ window.focus(); }catch(e){}
+}
+
 (async function init() {
   renderHdrStats();
   renderWatchlist();
