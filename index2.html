@@ -496,41 +496,57 @@ function setChartInterval(iv, btn) {
 // ═══════════════════════════════════════════
 // PRICE FETCHING
 // ═══════════════════════════════════════════
-const PROXY = 'https://corsproxy.io/?url=';
-const YF    = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=';
+// Yahoo's v7 /quote API now requires a crumb/cookie and fails for anonymous
+// pages, so we use the v8 /chart endpoint (no auth) and try several CORS
+// proxies in order until one succeeds.
+const PRICE_PROXIES = [
+  u => u,
+  u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+];
 
-async function fetchPrices(batch) {
+async function fetchJSON(url) {
+  for (let i = 0; i < PRICE_PROXIES.length; i++) {
+    try {
+      const resp = await fetch(PRICE_PROXIES[i](url), { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return await resp.json();
+    } catch (e) {
+      if (i === PRICE_PROXIES.length - 1) throw e;
+    }
+  }
+}
+
+async function fetchOne(ticker) {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' +
+              encodeURIComponent(ticker) + '?interval=1d&range=1d';
   try {
-    const url  = PROXY + encodeURIComponent(YF + batch.join(','));
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) throw new Error(resp.status);
-    const data = await resp.json();
-    (data.quoteResponse?.result || []).forEach(q => {
-      prices[q.symbol] = {
-        price:   q.regularMarketPrice,
-        chg:     q.regularMarketChange,
-        pct:     q.regularMarketChangePercent,
-        vol:     q.regularMarketVolume,
-        high:    q.regularMarketDayHigh,
-        low:     q.regularMarketDayLow,
-        hi52:    q.fiftyTwoWeekHigh,
-        lo52:    q.fiftyTwoWeekLow,
-        mktcap:  q.marketCap,
-        pe:      q.trailingPE,
-        eps:     q.epsTrailingTwelveMonths,
-        fwdPE:   q.forwardPE,
-      };
-    });
-  } catch(e) {
-    console.warn('Price fetch error:', e.message);
+    const data = await fetchJSON(url);
+    const m = data?.chart?.result?.[0]?.meta;
+    if (!m || m.regularMarketPrice == null) return;
+    const price = m.regularMarketPrice;
+    const prev  = m.chartPreviousClose ?? m.previousClose ?? price;
+    const chg   = price - prev;
+    prices[ticker] = {
+      price,
+      chg,
+      pct:    prev ? (chg / prev) * 100 : 0,
+      vol:    m.regularMarketVolume,
+      high:   m.regularMarketDayHigh,
+      low:    m.regularMarketDayLow,
+      hi52:   m.fiftyTwoWeekHigh,
+      lo52:   m.fiftyTwoWeekLow,
+      mktcap: null, pe: null, eps: null, fwdPE: null,
+    };
+  } catch (e) {
+    console.warn('Price fetch error', ticker, e.message);
   }
 }
 
 async function refreshAll() {
   const tickers = STOCKS.map(s => s.t);
-  for (let i = 0; i < tickers.length; i += 20) {
-    await fetchPrices(tickers.slice(i, i + 20));
-  }
+  await Promise.all(tickers.map(fetchOne));
   renderWatchlist();
   renderDetail(selTicker);
   renderTape();
@@ -853,18 +869,19 @@ async function addStock() {
   inp.value = 'LOADING…';
 
   try {
-    const url  = PROXY + encodeURIComponent(YF + ticker);
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const data = await resp.json();
-    const q    = data.quoteResponse?.result?.[0];
+    const url  = 'https://query1.finance.yahoo.com/v8/finance/chart/' +
+                 encodeURIComponent(ticker) + '?interval=1d&range=1d';
+    const data = await fetchJSON(url);
+    const m    = data?.chart?.result?.[0]?.meta;
 
-    if (!q) throw new Error('Not found');
+    if (!m || m.regularMarketPrice == null) throw new Error('Not found');
 
-    const px = q.regularMarketPrice;
+    const px   = m.regularMarketPrice;
+    const prev = m.chartPreviousClose ?? m.previousClose ?? px;
     const newStock = {
-      t:     q.symbol,
-      n:     q.longName || q.shortName || ticker,
-      seg:   q.sector || q.quoteType || 'Custom',
+      t:     (m.symbol || ticker).toUpperCase(),
+      n:     m.symbol || ticker,
+      seg:   'Custom',
       w:     0,
       sc:    70,
       strat: 'watch',
@@ -872,18 +889,17 @@ async function addStock() {
       fvH:   Math.round(px * 1.10),
       e:     [Math.round(px*0.90), Math.round(px*0.80), Math.round(px*0.70)],
       type:  'watchlist',
-      ex:    (q.fullExchangeName || '').includes('Nasdaq') ? 'NASDAQ' : 'NYSE',
+      ex:    (m.exchangeName || '').includes('NGM') || (m.exchangeName || '').includes('NMS') ? 'NASDAQ' : 'NYSE',
       note:  'Custom added — update entry levels as needed.',
     };
 
     STOCKS.unshift(newStock);
     prices[ticker] = {
-      price: q.regularMarketPrice, chg: q.regularMarketChange,
-      pct: q.regularMarketChangePercent, vol: q.regularMarketVolume,
-      high: q.regularMarketDayHigh, low: q.regularMarketDayLow,
-      hi52: q.fiftyTwoWeekHigh, lo52: q.fiftyTwoWeekLow,
-      mktcap: q.marketCap, pe: q.trailingPE, fwdPE: q.forwardPE,
-      eps: q.epsTrailingTwelveMonths,
+      price: px, chg: px - prev,
+      pct: prev ? ((px - prev) / prev) * 100 : 0, vol: m.regularMarketVolume,
+      high: m.regularMarketDayHigh, low: m.regularMarketDayLow,
+      hi52: m.fiftyTwoWeekHigh, lo52: m.fiftyTwoWeekLow,
+      mktcap: null, pe: null, fwdPE: null, eps: null,
     };
 
     renderWatchlist();
