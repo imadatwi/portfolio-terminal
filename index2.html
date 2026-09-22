@@ -1079,8 +1079,8 @@ function setStatus(m,err){var el=document.getElementById("status");if(el){el.tex
 function stamp(){var u=document.getElementById("updated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString();}
 function render(){
   var valid=DATA.filter(function(o){return o.r[TF]!=null;});
-  var g=valid.slice().sort(function(a,b){return b.r[TF]-a.r[TF];}).slice(0,20);
-  var l=valid.slice().sort(function(a,b){return a.r[TF]-b.r[TF];}).slice(0,20);
+  var g=valid.filter(function(o){return o.r[TF]>0;}).sort(function(a,b){return b.r[TF]-a.r[TF];}).slice(0,20);
+  var l=valid.filter(function(o){return o.r[TF]<0;}).sort(function(a,b){return a.r[TF]-b.r[TF];}).slice(0,20);
   document.getElementById("gainBody").innerHTML=rowsHtml(g);
   document.getElementById("loseBody").innerHTML=rowsHtml(l);
   document.getElementById("tfLblG").textContent=TF_LBL[TF];
