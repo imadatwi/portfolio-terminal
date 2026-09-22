@@ -3604,6 +3604,13 @@ tr.best .sym{color:var(--green);}
 .mc{color:var(--t2);}
 .scr{color:var(--amber);font-weight:bold;}
 .play{color:var(--t1);text-align:left;font-size:10px;}
+.plays{display:flex;gap:4px;padding:8px 16px;background:var(--bg1);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.pl{font-family:var(--font);font-size:10px;background:var(--bg3);color:var(--t2);border:1px solid var(--border2);padding:5px 10px;cursor:pointer;letter-spacing:1px;}
+.pl:hover{color:var(--t1);}
+.pl.active{background:var(--green);color:#07090f;border-color:var(--green);font-weight:bold;}
+.desc{padding:8px 16px;font-size:10px;color:var(--t2);background:var(--bg0);border-bottom:1px solid var(--border);line-height:1.4;}
+.rate{font-weight:bold;font-size:13px;}
+.r-hi{color:var(--green);}.r-md{color:var(--amber);}.r-lo{color:var(--t3);}
 .up{color:var(--green);}.dn{color:var(--red);}
 .empty{color:var(--t3);text-align:center;padding:20px;}
 .foot{padding:8px 16px;font-size:9px;color:var(--t3);border-top:1px solid var(--border);}
@@ -3622,14 +3629,21 @@ tr.best .sym{color:var(--green);}
   </select>
   <button id="refreshBtn">↻ RESCAN</button>
 </div>
+<div class="plays" id="playTabs">
+  <button class="pl active" data-pl="dip">1 · DIP BUY</button>
+  <button class="pl" data-pl="breakout">2 · BREAKOUT</button>
+  <button class="pl" data-pl="oversold">3 · OVERSOLD BOUNCE</button>
+  <button class="pl" data-pl="trend">4 · TREND RIDER</button>
+  <button class="pl" data-pl="value">5 · DEEP VALUE</button>
+</div>
+<div class="desc" id="playDesc"></div>
 <div class="wrap">
   <table><thead><tr>
     <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
-    <th>PRICE</th><th>MCAP</th><th>50D MA</th><th>200D MA</th>
-    <th>vs 50D</th><th>FROM HI</th><th>ENTRY</th><th class="l">SETUP</th>
-  </tr></thead><tbody id="body"><tr><td colspan="11" class="empty">Scanning…</td></tr></tbody></table>
+    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>52W POS</th><th>RATING</th>
+  </tr></thead><tbody id="body"><tr><td colspan="9" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; ENTRY score = uptrend (px&gt;200MA) + dip to rising 50MA + room below 52-wk high &middot; top 5 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R10</span></div>
+<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R11</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3641,48 +3655,55 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 function fpct(v){if(v==null||isNaN(v))return "—";return (v>=0?"+":"")+v.toFixed(1)+"%";}
 function chunk(arr,n){var out=[];for(var i=0;i<arr.length;i+=n)out.push(arr.slice(i,i+n));return out;}
 function pool(items,worker,conc){return new Promise(function(resolve){var idx=0,active=0;function next(){if(idx>=items.length&&active===0){resolve();return;}while(active<conc&&idx<items.length){active++;worker(items[idx++]).then(function(){},function(){}).then(function(){active--;next();});}}next();});}
-function score(o){
-  var p=o.price,m50=o.ma50,m200=o.ma200,hi=o.hi52;
-  if(!p||!m50||!m200||!hi)return null;
-  var s=0;
-  var trend=p>m200; if(trend)s+=25; else s-=10;
-  if(m50>m200)s+=15;
-  var d50=(p-m50)/m50;
-  if(d50>=-0.03&&d50<=0.06)s+=30*(1-Math.abs(d50-0.01)/0.06);
-  else if(d50>0.06&&d50<=0.15)s+=8;
-  var fh=(hi-p)/hi;
-  if(fh>=0.02&&fh<=0.18)s+=20*(1-Math.abs(fh-0.08)/0.16);
-  else if(fh<0.02)s+=14;
-  if(fh>0.35)s-=15;
-  var c=o.chg; if(c!=null){if(c>=0&&c<=3)s+=10;else if(c>3)s+=4;}
-  s=Math.max(0,Math.min(100,Math.round(s)));
-  var play;
-  if(fh<0.03&&trend&&m50>m200)play="CALL · breakout";
-  else if(d50>=-0.03&&d50<=0.05&&trend)play="LONG / CALL · dip";
-  else if(trend)play="LONG · trend";
-  else play="WATCH";
-  return {score:s,d50:d50*100,fh:fh*100,play:play};
+var PLAY="dip";
+var PLAYS={
+  dip:{name:"DIP BUY",type:"Long or Call",desc:"Pullback in an uptrend — price above the 200-day MA, 50-day rising, dipping back to just above the 50-day (support/buy zone). Best risk/reward."},
+  breakout:{name:"BREAKOUT",type:"Call",desc:"Momentum at new highs — strong uptrend, price within a few % of the 52-week high, above both MAs, ideally on heavy volume."},
+  oversold:{name:"OVERSOLD BOUNCE",type:"Contrarian (higher risk)",desc:"Beaten-down name in the bottom quarter of its 52-week range that is turning up today. Catches a reversal — can be a falling knife."},
+  trend:{name:"TREND RIDER",type:"Long / shares",desc:"Steady grinder comfortably above a rising 50- and 200-day MA, not overextended, not at fresh highs. Hold-the-trend, not a fast trade."},
+  value:{name:"DEEP VALUE REVERSAL",type:"Long",desc:"25-50% off its 52-week high but basing/reclaiming its 200-day MA with a green day. Longer-term recovery setup."}
+};
+function band(x,center,width){var d=Math.abs(x-center)/width;return d>=1?0:(1-d);}
+function computeAll(o){
+  var p=o.price,m50=o.ma50,m200=o.ma200,hi=o.hi52,lo=o.lo52;
+  if(!p||!m50||!m200||!hi||!lo||hi<=lo)return false;
+  var d50=(p-m50)/m50, d200=(p-m200)/m200, fh=(hi-p)/hi, rng=(p-lo)/(hi-lo);
+  var c=(o.chg==null?0:o.chg);
+  var rv=(o.avgVol&&o.vol)?o.vol/o.avgVol:null;
+  var trend=p>m200, align=m50>m200;
+  o.d50=d50*100; o.fh=fh*100; o.rng=rng*100;
+  var s={};
+  var dip=0; if(trend)dip+=30; if(align)dip+=15; dip+=35*band(d50,0.01,0.06); dip+=15*band(fh,0.10,0.12); if(c>=0&&c<=4)dip+=5; if(!trend)dip-=30; s.dip=dip;
+  var brk=0; if(trend)brk+=25; if(align)brk+=15; brk+=35*band(fh,0.0,0.06); brk+=(rv!=null?15*Math.min(1,Math.max(0,(rv-1)/1.5)):6); if(c>0)brk+=10; if(fh>0.12)brk-=25; s.breakout=brk;
+  var ovs=0; ovs+=45*band(rng,0.10,0.18); ovs+=(c>0?25:-20); ovs+=15*band(fh,0.45,0.35); if(p<lo*1.02)ovs-=10; if(rv!=null&&rv>1.2)ovs+=10; s.oversold=ovs;
+  var trd=0; if(trend)trd+=30; if(align)trd+=20; trd+=25*band(d50,0.05,0.08); trd+=15*band(d200,0.18,0.20); trd+=10*band(fh,0.08,0.10); if(!trend||!align)trd-=25; s.trend=trd;
+  var val=0; val+=40*band(fh,0.35,0.15); val+=25*band(d200,0.0,0.12); val+=(c>0?20:-10); val+=15*band(rng,0.35,0.25); s.value=val;
+  ["dip","breakout","oversold","trend","value"].forEach(function(k){s[k]=Math.max(0,Math.min(100,Math.round(s[k])));});
+  o.s=s;
+  return true;
 }
+function rate(v){return Math.max(1,Math.min(10,Math.round(v/10)));}
 function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
 function setCap(v){MINCAP=Number(v)||1e9;loadEntries();}
+function setPlay(pl){PLAY=pl;var t=document.querySelectorAll(".pl");for(var i=0;i<t.length;i++){t[i].className="pl"+(t[i].getAttribute("data-pl")===pl?" active":"");}render();}
 function render(){
-  var v=DATA.filter(function(o){return o.sc!=null && (o.cap==null||o.cap>=MINCAP);}).sort(function(a,b){return b.sc-a.sc;}).slice(0,30);
-  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="11" class="empty">Scanning…</td></tr>';return;}
+  var d=document.getElementById("playDesc");
+  if(d&&PLAYS[PLAY])d.innerHTML="<b style=\"color:var(--green)\">"+esc(PLAYS[PLAY].name)+"</b> — <span style=\"color:var(--amber)\">"+esc(PLAYS[PLAY].type)+"</span> &middot; "+esc(PLAYS[PLAY].desc);
+  var v=DATA.filter(function(o){return o.s&&o.s[PLAY]!=null&&(o.cap==null||o.cap>=MINCAP);}).sort(function(a,b){return b.s[PLAY]-a.s[PLAY];}).slice(0,10);
+  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="9" class="empty">Scanning…</td></tr>';return;}
   var out="";
   for(var i=0;i<v.length;i++){
-    var o=v[i];var best=i<5?" best":"";
-    out+='<tr data-tk="'+esc(o.tk)+'" class="'+(i<5?"best":"")+'">'
+    var o=v[i];var rt=rate(o.s[PLAY]);var rc=rt>=8?"r-hi":rt>=6?"r-md":"r-lo";
+    out+='<tr data-tk="'+esc(o.tk)+'"'+(i<3?' class="best"':'')+'>'
       +'<td class="rk">'+(i+1)+'</td>'
       +'<td class="sym">'+esc(o.tk)+'</td>'
       +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
       +'<td class="px">'+money(o.price)+'</td>'
       +'<td class="mc">'+capf(o.cap)+'</td>'
-      +'<td>'+money(o.ma50)+'</td>'
-      +'<td>'+money(o.ma200)+'</td>'
       +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
       +'<td class="dn">'+fpct(-o.fh)+'</td>'
-      +'<td class="scr">'+o.sc+'</td>'
-      +'<td class="play">'+esc(o.play)+'</td>'
+      +'<td>'+(o.rng==null?"—":Math.round(o.rng)+"%")+'</td>'
+      +'<td class="rate '+rc+'">'+rt+'/10</td>'
       +'</tr>';
   }
   document.getElementById("body").innerHTML=out;
@@ -3703,16 +3724,17 @@ function loadEntries(){
     return pool(chunks,function(c){
       return fmpJSON("/api/v3/quote/"+c.join(",")).catch(function(){return fmpJSON("/stable/batch-quote?symbols="+c.join(","));}).then(function(a){
         (Array.isArray(a)?a:[]).forEach(function(q){
-          var o={tk:q.symbol,name:nameMap[q.symbol]||q.name||"",price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),cap:pnum(q.marketCap),vol:pnum(q.volume)};
-          var sc=score(o);if(sc){o.sc=sc.score;o.d50=sc.d50;o.fh=sc.fh;o.play=sc.play;DATA.push(o);}
+          var o={tk:q.symbol,name:nameMap[q.symbol]||q.name||"",price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),lo52:pnum(q.yearLow),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),cap:pnum(q.marketCap),vol:pnum(q.volume),avgVol:pnum(q.avgVolume)};
+          if(computeAll(o))DATA.push(o);
         });
         done+=c.length;setStatus("Analyzing "+Math.min(done,total)+"/"+total+"…",false);render();
       }).catch(function(){});
-    },6).then(function(){busy=false;setStatus("● "+DATA.length+" analyzed — top 5 highlighted",false);render();});
+    },6).then(function(){busy=false;setStatus("● "+DATA.length+" scanned — top 10 per play, rated 1-10",false);render();});
   }).catch(function(e){busy=false;setStatus("Scan failed ("+e.message+") — your FMP plan may not include the screener. RESCAN to retry.",true);});
 }
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
 document.getElementById("refreshBtn").addEventListener("click",loadEntries);
+document.getElementById("playTabs").addEventListener("click",function(e){var b=e.target.closest(".pl");if(b)setPlay(b.getAttribute("data-pl"));});
 document.getElementById("body").addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});
 loadEntries();
 <\/script>
