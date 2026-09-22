@@ -1036,7 +1036,7 @@ function computeRet(closes){
   return {"1D":r(1),"1W":r(5),"2W":r(10),"4W":r(20),price:c[n-1]};
 }
 function fetchTicker(tk){
-  var url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(tk)+"?interval=1d&range=3mo";
+  var url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(tk)+"?interval=1d&range=2mo";
   return tryFetch(url).then(function(j){
     var res=j&&j.chart&&j.chart.result&&j.chart.result[0];if(!res)return null;
     var meta=res.meta||{};var q=res.indicators&&res.indicators.quote&&res.indicators.quote[0];
@@ -1090,9 +1090,18 @@ function render(){
 }
 function loadAll(){
   if(busy)return;busy=true;
-  setStatus("Fetching "+UNIVERSE.length+" tickers…",false);
-  pool(UNIVERSE,fetchTicker,6).then(function(out){
-    busy=false;DATA=out;
+  DATA=[];render();
+  var total=UNIVERSE.length,done=0;
+  setStatus("Loading 0/"+total+"…",false);
+  pool(UNIVERSE,function(tk){
+    return fetchTicker(tk).then(function(res){
+      done++;
+      if(res){DATA.push(res);render();}
+      if(done<total)setStatus("Loading "+done+"/"+total+"…",false);
+      return res;
+    });
+  },10).then(function(){
+    busy=false;
     if(!DATA.length){setStatus("No data — proxies/CORS blocked. Try REFRESH.",true);}
     else{setStatus("● "+DATA.length+" loaded",false);stamp();render();}
   });
