@@ -932,9 +932,9 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 // INIT
 // ═══════════════════════════════════════════
 // ═══════════════════════════════════════════
-// MARKET MOVERS — live top 20 winners / losers (separate window)
-// Pulls from TradingView's public scanner endpoint (no account needed),
-// falling back to the same corsproxy the app uses if CORS blocks it.
+// MARKET MOVERS — top 20 winners / losers over 1D / 1W / 2W / 4W (separate window)
+// Computes each window's % return from daily closes (Yahoo v8 chart) across a
+// universe of major US names + the terminal's own tickers, via CORS proxies.
 // ═══════════════════════════════════════════
 const MOVERS_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
@@ -976,6 +976,12 @@ tr[data-tk]:hover{background:var(--bg3);}
 .empty{color:var(--t3);text-align:center;padding:20px;}
 .foot{padding:8px 16px;font-size:9px;color:var(--t3);border-top:1px solid var(--border);}
 #status{font-size:10px;}
+.tabs{display:flex;gap:4px;}
+.tf{font-family:var(--font);font-size:10px;background:var(--bg3);color:var(--t2);border:1px solid var(--border2);padding:4px 9px;cursor:pointer;letter-spacing:1px;}
+.tf:hover{color:var(--t1);}
+.tf.active{background:var(--amber);color:#07090f;border-color:var(--amber);font-weight:bold;}
+.hot{font-weight:bold;background:rgba(240,168,0,.08);}
+th.hot{color:var(--amber);background:transparent;}
 </style></head>
 <body>
 <div class="top">
@@ -984,114 +990,120 @@ tr[data-tk]:hover{background:var(--bg3);}
   <div class="meta" id="updated">Loading…</div>
   <div id="status">Init</div>
   <div class="spacer"></div>
-  <div class="ctrl">REFRESH
-    <select onchange="setIv(this.value)">
-      <option value="10">10s</option>
-      <option value="15" selected>15s</option>
-      <option value="30">30s</option>
-      <option value="60">60s</option>
-    </select>
-    <span class="cd" id="cd">15s</span>
-    <button id="refreshBtn">↻ NOW</button>
+  <div class="tabs" id="tfTabs">
+    <button class="tf active" data-tf="1D">1 DAY</button>
+    <button class="tf" data-tf="1W">1 WEEK</button>
+    <button class="tf" data-tf="2W">2 WEEKS</button>
+    <button class="tf" data-tf="4W">4 WEEKS</button>
   </div>
+  <button id="refreshBtn">↻ REFRESH</button>
 </div>
 <div class="grid">
   <div class="panel">
-    <div class="phdr win"><span>▲ TOP 20 GAINERS</span><span>DAILY</span></div>
+    <div class="phdr win"><span>▲ TOP 20 GAINERS</span><span id="tfLblG">1 DAY</span></div>
     <table><thead><tr>
-      <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
-      <th>PRICE</th><th>CHG</th><th>CHG%</th><th>VOL</th><th>MKT CAP</th>
-    </tr></thead><tbody id="gainBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table>
+      <th class="l">#</th><th class="l">SYM</th><th>PRICE</th>
+      <th data-c="1D">1D</th><th data-c="1W">1W</th><th data-c="2W">2W</th><th data-c="4W">4W</th>
+    </tr></thead><tbody id="gainBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table>
   </div>
   <div class="panel">
-    <div class="phdr los"><span>▼ TOP 20 LOSERS</span><span>DAILY</span></div>
+    <div class="phdr los"><span>▼ TOP 20 LOSERS</span><span id="tfLblL">1 DAY</span></div>
     <table><thead><tr>
-      <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
-      <th>PRICE</th><th>CHG</th><th>CHG%</th><th>VOL</th><th>MKT CAP</th>
-    </tr></thead><tbody id="loseBody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table>
+      <th class="l">#</th><th class="l">SYM</th><th>PRICE</th>
+      <th data-c="1D">1D</th><th data-c="1W">1W</th><th data-c="2W">2W</th><th data-c="4W">4W</th>
+    </tr></thead><tbody id="loseBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">US stocks (NASDAQ / NYSE / AMEX) &middot; price &gt; $3 &middot; volume &gt; 1M &middot; sorted by daily % change &middot; source: TradingView public scanner &middot; click any row to load it in the terminal</div>
+<div class="foot">Universe: ~50 major US stocks + your watchlist &middot; % return over each window from daily closes &middot; source: Yahoo Finance (v8) &middot; switch windows with the tabs &middot; click any row to load it in the terminal</div>
 <script>
-var TV="https://scanner.tradingview.com/america/scan?label-product=markets-screener";
-var YH_G="https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=20&scrIds=day_gainers";
-var YH_L="https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=20&scrIds=day_losers";
-var interval=15,timer=null,countdown=15,source="";
-// Try a URL through direct + several CORS proxies, in order, until one works.
-function postBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://proxy.cors.sh/"+u;}];}
+// Universe of liquid US names; merged with the terminal's own tickers.
+var UNIVERSE=["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","AMD","TSLA","TSM","ASML","ORCL","CRM","ADBE","QCOM","MU","ARM","PLTR","SMCI","MRVL","ANET","DELL","NOW","PANW","CRWD","SNOW","NET","AMAT","KLAC","MSTR","COIN","HOOD","SOFI","UBER","NFLX","LLY","JPM","V","MA","XOM","CEG","VST","BA","GE","DIS","WMT","COST","INTC"];
+var NAMES={};
+try{ if(window.opener&&window.opener.STOCKS){ window.opener.STOCKS.forEach(function(s){ NAMES[s.t]=s.n; if(UNIVERSE.indexOf(s.t)<0)UNIVERSE.push(s.t); }); } }catch(e){}
+var TF="1D", DATA=[], timer=null, busy=false;
+var TF_LBL={"1D":"1 DAY","1W":"1 WEEK","2W":"2 WEEKS","4W":"4 WEEKS"};
+
 function getBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u);},function(u){return "https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u);}];}
-function tryFetch(url,opt,builders,i){
-  i=i||0;
-  return fetch(builders[i](url),opt).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
-  .catch(function(e){if(i+1<builders.length)return tryFetch(url,opt,builders,i+1);throw e;});
+function tryFetch(url,i){
+  i=i||0;var B=getBuilders();
+  return fetch(B[i](url)).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  .catch(function(e){if(i+1<B.length)return tryFetch(url,i+1);throw e;});
 }
-function tvBody(order){return JSON.stringify({columns:["name","description","close","change","change_abs","volume","market_cap_basic"],filter:[{left:"type",operation:"in_range",right:["stock"]},{left:"exchange",operation:"in_range",right:["NASDAQ","NYSE","AMEX"]},{left:"close",operation:"greater",right:3},{left:"volume",operation:"greater",right:1000000}],sort:{sortBy:"change",sortOrder:order},range:[0,20],options:{lang:"en"},markets:["america"],symbols:{query:{types:[]},tickers:[]}});}
-function fromTV(order){
-  var opt={method:"POST",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:tvBody(order)};
-  return tryFetch(TV,opt,postBuilders()).then(function(j){
-    return ((j&&j.data)||[]).map(function(r){var d=r.d||[],p=(r.s||"").split(":");return {tk:p[1]||d[0]||"",ex:p[0]||"",name:d[1]||d[0]||"",close:d[2],chgPct:d[3],chgAbs:d[4],vol:d[5],cap:d[6]};});
+function computeRet(closes){
+  var c=[];for(var i=0;i<closes.length;i++){if(closes[i]!=null)c.push(closes[i]);}
+  var n=c.length;if(!n)return null;
+  function r(k){return (n-1-k>=0 && c[n-1-k])?(c[n-1]/c[n-1-k]-1)*100:null;}
+  return {"1D":r(1),"1W":r(5),"2W":r(10),"4W":r(20),price:c[n-1]};
+}
+function fetchTicker(tk){
+  var url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(tk)+"?interval=1d&range=3mo";
+  return tryFetch(url).then(function(j){
+    var res=j&&j.chart&&j.chart.result&&j.chart.result[0];if(!res)return null;
+    var meta=res.meta||{};var q=res.indicators&&res.indicators.quote&&res.indicators.quote[0];
+    var closes=(q&&q.close)||[];var r=computeRet(closes);if(!r)return null;
+    return {tk:tk,name:NAMES[tk]||"",price:(meta.regularMarketPrice!=null?meta.regularMarketPrice:r.price),r:{"1D":r["1D"],"1W":r["1W"],"2W":r["2W"],"4W":r["4W"]}};
+  }).catch(function(){return null;});
+}
+function pool(items,worker,conc){
+  return new Promise(function(resolve){
+    var idx=0,active=0,out=[];
+    function next(){
+      if(idx>=items.length&&active===0){resolve(out);return;}
+      while(active<conc&&idx<items.length){
+        active++;
+        worker(items[idx++]).then(function(res){if(res)out.push(res);},function(){}).then(function(){active--;next();});
+      }
+    }
+    next();
   });
 }
-function fromYH(url){
-  return tryFetch(url,{},getBuilders()).then(function(j){
-    var res=j&&j.finance&&j.finance.result&&j.finance.result[0];
-    return ((res&&res.quotes)||[]).map(function(x){return {tk:x.symbol||"",ex:(x.fullExchangeName||"").replace("NasdaqGS","NASDAQ").replace("NasdaqGM","NASDAQ"),name:x.shortName||x.longName||x.symbol,close:x.regularMarketPrice,chgPct:x.regularMarketChangePercent,chgAbs:x.regularMarketChange,vol:x.regularMarketVolume,cap:x.marketCap};});
-  });
-}
-function getMovers(){
-  return Promise.all([fromTV("desc"),fromTV("asc")]).then(function(r){
-    if(r[0].length&&r[1].length){source="TradingView";return r;}
-    throw new Error("TradingView returned no rows");
-  }).catch(function(){
-    return Promise.all([fromYH(YH_G),fromYH(YH_L)]).then(function(r){source="Yahoo (fallback)";return r;});
-  });
-}
-function num(n){return typeof n==="number"?n:parseFloat(n);}
-function money(n){n=num(n);if(isNaN(n))return "—";return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
-function vol(n){n=num(n);if(isNaN(n))return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n);}
-function cap(n){n=num(n);if(isNaN(n)||!n)return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(2)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
+function fmtPct(v){if(v==null||isNaN(v))return "—";return (v>=0?"+":"")+v.toFixed(2)+"%";}
+function money(n){if(n==null||isNaN(n))return "—";return Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function rowsHtml(rows){
-  if(!rows||!rows.length)return '<tr><td colspan="8" class="empty">No data returned</td></tr>';
+function cell(v,tf){var cls=(v==null?"":(v>=0?"up":"dn"))+(tf===TF?" hot":"");return '<td class="'+cls+'">'+fmtPct(v)+'</td>';}
+function rowsHtml(list){
+  if(!list.length)return '<tr><td colspan="7" class="empty">No data</td></tr>';
   var out="";
-  for(var i=0;i<rows.length;i++){
-    var o=rows[i],chg=num(o.chgPct);
-    var cls=chg>=0?"up":"dn",sg=chg>=0?"+":"";
-    out+='<tr data-tk="'+esc(o.tk)+'">'
+  for(var i=0;i<list.length;i++){
+    var o=list[i];
+    out+='<tr data-tk="'+esc(o.tk)+'" title="'+esc(o.name)+'">'
       +'<td class="rk">'+(i+1)+'</td>'
-      +'<td class="sym">'+esc(o.tk)+'<span class="ex">'+esc(o.ex)+'</span></td>'
-      +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
-      +'<td class="px">'+money(o.close)+'</td>'
-      +'<td class="'+cls+'">'+sg+money(o.chgAbs)+'</td>'
-      +'<td class="'+cls+' pct">'+sg+(isNaN(chg)?"—":chg.toFixed(2))+'%</td>'
-      +'<td class="vl">'+vol(o.vol)+'</td>'
-      +'<td class="mc">'+cap(o.cap)+'</td>'
+      +'<td class="sym">'+esc(o.tk)+'</td>'
+      +'<td class="px">'+money(o.price)+'</td>'
+      +cell(o.r["1D"],"1D")+cell(o.r["1W"],"1W")+cell(o.r["2W"],"2W")+cell(o.r["4W"],"4W")
       +'</tr>';
   }
   return out;
 }
 function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
-function stamp(){var u=document.getElementById("updated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString()+(source?(" · via "+source):"");}
-function load(){
-  setStatus("Fetching…",false);
-  getMovers().then(function(res){
-    document.getElementById("gainBody").innerHTML=rowsHtml(res[0]);
-    document.getElementById("loseBody").innerHTML=rowsHtml(res[1]);
-    stamp();setStatus("● Live",false);
-  }).catch(function(e){
-    setStatus("All sources failed ("+e.message+") — retrying. If this persists, popups/CORS may be blocked.",true);
-    var msg='<tr><td colspan="8" class="empty">Could not reach TradingView or Yahoo (CORS/proxy blocked). Retrying every '+interval+'s…</td></tr>';
-    document.getElementById("gainBody").innerHTML=msg;
-    document.getElementById("loseBody").innerHTML=msg;
+function stamp(){var u=document.getElementById("updated");if(u)u.textContent="Updated "+new Date().toLocaleTimeString();}
+function render(){
+  var valid=DATA.filter(function(o){return o.r[TF]!=null;});
+  var g=valid.slice().sort(function(a,b){return b.r[TF]-a.r[TF];}).slice(0,20);
+  var l=valid.slice().sort(function(a,b){return a.r[TF]-b.r[TF];}).slice(0,20);
+  document.getElementById("gainBody").innerHTML=rowsHtml(g);
+  document.getElementById("loseBody").innerHTML=rowsHtml(l);
+  document.getElementById("tfLblG").textContent=TF_LBL[TF];
+  document.getElementById("tfLblL").textContent=TF_LBL[TF];
+  var ths=document.querySelectorAll("th[data-c]");
+  for(var i=0;i<ths.length;i++){ths[i].className=(ths[i].getAttribute("data-c")===TF?"hot":"");}
+}
+function loadAll(){
+  if(busy)return;busy=true;
+  setStatus("Fetching "+UNIVERSE.length+" tickers…",false);
+  pool(UNIVERSE,fetchTicker,6).then(function(out){
+    busy=false;DATA=out;
+    if(!DATA.length){setStatus("No data — proxies/CORS blocked. Try REFRESH.",true);}
+    else{setStatus("● "+DATA.length+" loaded",false);stamp();render();}
   });
 }
-function tick(){countdown--;if(countdown<=0){countdown=interval;load();}var c=document.getElementById("cd");if(c)c.textContent=countdown+"s";}
-function start(){if(timer)clearInterval(timer);countdown=interval;load();timer=setInterval(tick,1000);}
-function setIv(v){interval=parseInt(v,10)||15;countdown=interval;}
+function setTF(tf){TF=tf;var t=document.querySelectorAll(".tf");for(var i=0;i<t.length;i++){t[i].className="tf"+(t[i].getAttribute("data-tf")===tf?" active":"");}render();}
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
-function bindClicks(){["gainBody","loseBody"].forEach(function(id){var b=document.getElementById(id);if(b)b.addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});});}
-document.getElementById("refreshBtn").addEventListener("click",function(){countdown=interval;load();});
-bindClicks();start();
+document.getElementById("tfTabs").addEventListener("click",function(e){var b=e.target.closest(".tf");if(b)setTF(b.getAttribute("data-tf"));});
+document.getElementById("refreshBtn").addEventListener("click",loadAll);
+["gainBody","loseBody"].forEach(function(id){var b=document.getElementById(id);if(b)b.addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});});
+loadAll();
+timer=setInterval(loadAll,120000);
 <\/script>
 </body></html>`;
 
