@@ -756,6 +756,7 @@ body {
     <button class="btn" onclick="showGreatBuys()" style="background:#0a4a1a;color:#0f6;border:1px solid #0f6;margin-left:6px;font-weight:bold">🔥 GREAT BUYS</button>
     <button class="btn" onclick="showEarningsPlays()" style="background:#3a0a4a;color:#c4b5fd;border:1px solid #a78bfa;margin-left:6px;font-weight:bold">🎰 EARNINGS PLAYS</button>
     <button class="btn" onclick="showOptionsScreener()" style="background:#0a2a4a;color:#55ccff;border:1px solid #3399ff;margin-left:6px;font-weight:bold">💎 OPTIONS VALUE</button>
+    <button class="btn" onclick="openEntries()" style="background:#0a4a1a;color:#7CFC00;border:1px solid #0f6;margin-left:6px;font-weight:bold">🎯 PERFECT ENTRIES</button>
   </div>
 </div>
 
@@ -3565,6 +3566,162 @@ function loadTickerFromMovers(ticker){
   if(STOCKS.find(function(s){ return s.t === ticker; })){ selectStock(ticker); }
   else { const inp = document.getElementById('searchInput'); if(inp){ inp.value = ticker; addStock(); } }
   try{ window.focus(); }catch(e){}
+}
+
+// ═══════════════════════════════════════════
+// PERFECT ENTRIES — full-market technical buy-setup scanner (cap ≥ $1B)
+// Scores each stock on: uptrend (price>200MA), dip to a rising 50MA, and
+// room below the 52-week high. Flags LONG vs CALL setups. FMP-powered.
+// ═══════════════════════════════════════════
+const ENTRIES_HTML = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Perfect Entries — Scanner</title>
+<style>
+:root{--bg0:#07090f;--bg1:#0c1118;--bg2:#111b27;--bg3:#162030;--border:#1c2e42;--border2:#243a52;--green:#00c47a;--red:#f03050;--amber:#f0a800;--t1:#d0e4f4;--t2:#6090b8;--t3:#304860;--font:'Courier New','Lucida Console',monospace;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg0);color:var(--t1);font-family:var(--font);font-size:12px;}
+.top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg1);border-bottom:2px solid var(--green);position:sticky;top:0;z-index:5;flex-wrap:wrap;}
+.title{font-size:15px;font-weight:bold;color:var(--green);letter-spacing:2px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.4s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.spacer{flex:1;}
+select,button{font-family:var(--font);font-size:11px;background:var(--bg3);color:var(--t1);border:1px solid var(--border2);padding:4px 8px;cursor:pointer;}
+button:hover{background:var(--border2);}
+#status{font-size:10px;color:var(--t2);}
+.wrap{padding:12px 16px;overflow-x:auto;}
+table{width:100%;border-collapse:collapse;min-width:820px;}
+th{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);}
+th.l,td.l{text-align:left;}
+td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--bg2);white-space:nowrap;}
+tr[data-tk]{cursor:pointer;}
+tr[data-tk]:hover{background:var(--bg3);}
+tr.best{background:rgba(0,196,122,.10);}
+tr.best .sym{color:var(--green);}
+.rk{color:var(--t3);width:26px;text-align:left;}
+.sym{color:var(--amber);font-weight:bold;text-align:left;}
+.nm{color:var(--t2);text-align:left;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+.px{color:var(--t1);}
+.mc{color:var(--t2);}
+.scr{color:var(--amber);font-weight:bold;}
+.play{color:var(--t1);text-align:left;font-size:10px;}
+.up{color:var(--green);}.dn{color:var(--red);}
+.empty{color:var(--t3);text-align:center;padding:20px;}
+.foot{padding:8px 16px;font-size:9px;color:var(--t3);border-top:1px solid var(--border);}
+</style></head>
+<body>
+<div class="top">
+  <div class="dot"></div>
+  <div class="title">🎯 PERFECT ENTRIES</div>
+  <div id="status">Init</div>
+  <div class="spacer"></div>
+  <span style="font-size:10px;color:var(--t2)">MIN CAP</span>
+  <select id="capSel" onchange="setCap(this.value)">
+    <option value="1000000000" selected>$1B</option>
+    <option value="2000000000">$2B</option>
+    <option value="10000000000">$10B</option>
+  </select>
+  <button id="refreshBtn">↻ RESCAN</button>
+</div>
+<div class="wrap">
+  <table><thead><tr>
+    <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
+    <th>PRICE</th><th>MCAP</th><th>50D MA</th><th>200D MA</th>
+    <th>vs 50D</th><th>FROM HI</th><th>ENTRY</th><th class="l">SETUP</th>
+  </tr></thead><tbody id="body"><tr><td colspan="11" class="empty">Scanning…</td></tr></tbody></table>
+</div>
+<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; ENTRY score = uptrend (px&gt;200MA) + dip to rising 50MA + room below 52-wk high &middot; top 5 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R10</span></div>
+<script>
+var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
+var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
+function fmpJSON(path){return fetch(FMP+path+(path.indexOf("?")>=0?"&":"?")+"apikey="+FMP_KEY).then(function(r){if(!r.ok)throw new Error("FMP "+r.status);return r.json();});}
+function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\s]/g,""));return (v==null||isNaN(v))?null:v;}
+function money(n){if(n==null||isNaN(n))return "—";return Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function capf(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(1)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function fpct(v){if(v==null||isNaN(v))return "—";return (v>=0?"+":"")+v.toFixed(1)+"%";}
+function chunk(arr,n){var out=[];for(var i=0;i<arr.length;i+=n)out.push(arr.slice(i,i+n));return out;}
+function pool(items,worker,conc){return new Promise(function(resolve){var idx=0,active=0;function next(){if(idx>=items.length&&active===0){resolve();return;}while(active<conc&&idx<items.length){active++;worker(items[idx++]).then(function(){},function(){}).then(function(){active--;next();});}}next();});}
+function score(o){
+  var p=o.price,m50=o.ma50,m200=o.ma200,hi=o.hi52;
+  if(!p||!m50||!m200||!hi)return null;
+  var s=0;
+  var trend=p>m200; if(trend)s+=25; else s-=10;
+  if(m50>m200)s+=15;
+  var d50=(p-m50)/m50;
+  if(d50>=-0.03&&d50<=0.06)s+=30*(1-Math.abs(d50-0.01)/0.06);
+  else if(d50>0.06&&d50<=0.15)s+=8;
+  var fh=(hi-p)/hi;
+  if(fh>=0.02&&fh<=0.18)s+=20*(1-Math.abs(fh-0.08)/0.16);
+  else if(fh<0.02)s+=14;
+  if(fh>0.35)s-=15;
+  var c=o.chg; if(c!=null){if(c>=0&&c<=3)s+=10;else if(c>3)s+=4;}
+  s=Math.max(0,Math.min(100,Math.round(s)));
+  var play;
+  if(fh<0.03&&trend&&m50>m200)play="CALL · breakout";
+  else if(d50>=-0.03&&d50<=0.05&&trend)play="LONG / CALL · dip";
+  else if(trend)play="LONG · trend";
+  else play="WATCH";
+  return {score:s,d50:d50*100,fh:fh*100,play:play};
+}
+function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
+function setCap(v){MINCAP=Number(v)||1e9;loadEntries();}
+function render(){
+  var v=DATA.filter(function(o){return o.sc!=null && (o.cap==null||o.cap>=MINCAP);}).sort(function(a,b){return b.sc-a.sc;}).slice(0,30);
+  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="11" class="empty">Scanning…</td></tr>';return;}
+  var out="";
+  for(var i=0;i<v.length;i++){
+    var o=v[i];var best=i<5?" best":"";
+    out+='<tr data-tk="'+esc(o.tk)+'" class="'+(i<5?"best":"")+'">'
+      +'<td class="rk">'+(i+1)+'</td>'
+      +'<td class="sym">'+esc(o.tk)+'</td>'
+      +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
+      +'<td class="px">'+money(o.price)+'</td>'
+      +'<td class="mc">'+capf(o.cap)+'</td>'
+      +'<td>'+money(o.ma50)+'</td>'
+      +'<td>'+money(o.ma200)+'</td>'
+      +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
+      +'<td class="dn">'+fpct(-o.fh)+'</td>'
+      +'<td class="scr">'+o.sc+'</td>'
+      +'<td class="play">'+esc(o.play)+'</td>'
+      +'</tr>';
+  }
+  document.getElementById("body").innerHTML=out;
+}
+function loadEntries(){
+  if(busy)return;busy=true;DATA=[];render();
+  setStatus("Scanning US market (cap ≥ "+capf(MINCAP)+")…",false);
+  fmpJSON("/api/v3/stock-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=5&exchange=NYSE,NASDAQ,AMEX&isActivelyTrading=true&limit=6000")
+  .catch(function(){return fmpJSON("/stable/company-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=5&isActivelyTrading=true&limit=6000");})
+  .then(function(list){
+    list=Array.isArray(list)?list:[];
+    if(!list.length)throw new Error("screener empty");
+    list.sort(function(a,b){return (pnum(b.volume)||0)-(pnum(a.volume)||0);});
+    var nameMap={};list.forEach(function(x){nameMap[x.symbol]=x.companyName||x.name||"";});
+    var syms=list.slice(0,LIMIT).map(function(x){return x.symbol;}).filter(Boolean);
+    var chunks=chunk(syms,50),done=0,total=syms.length;
+    setStatus("Analyzing "+total+" liquid names…",false);
+    return pool(chunks,function(c){
+      return fmpJSON("/api/v3/quote/"+c.join(",")).catch(function(){return fmpJSON("/stable/batch-quote?symbols="+c.join(","));}).then(function(a){
+        (Array.isArray(a)?a:[]).forEach(function(q){
+          var o={tk:q.symbol,name:nameMap[q.symbol]||q.name||"",price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),cap:pnum(q.marketCap),vol:pnum(q.volume)};
+          var sc=score(o);if(sc){o.sc=sc.score;o.d50=sc.d50;o.fh=sc.fh;o.play=sc.play;DATA.push(o);}
+        });
+        done+=c.length;setStatus("Analyzing "+Math.min(done,total)+"/"+total+"…",false);render();
+      }).catch(function(){});
+    },6).then(function(){busy=false;setStatus("● "+DATA.length+" analyzed — top 5 highlighted",false);render();});
+  }).catch(function(e){busy=false;setStatus("Scan failed ("+e.message+") — your FMP plan may not include the screener. RESCAN to retry.",true);});
+}
+function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
+document.getElementById("refreshBtn").addEventListener("click",loadEntries);
+document.getElementById("body").addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});
+loadEntries();
+<\/script>
+</body></html>`;
+
+function openEntries(){
+  const w = window.open('', 'perfectEntries', 'width=1200,height=860,scrollbars=yes,resizable=yes');
+  if(!w){ alert('Popup blocked — please allow popups to open Perfect Entries.'); return; }
+  w.document.open(); w.document.write(ENTRIES_HTML); w.document.close(); w.focus();
 }
 
 (async function init() {
