@@ -3382,13 +3382,23 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Universe: your watchlist &middot; % return over each window from daily closes &middot; source: Yahoo Finance (v8) &middot; gainers = up only, losers = down only &middot; click any row to load it in the terminal &middot; <span style="color:var(--amber)">build R6</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R7</span></div>
 <script>
 var UNIVERSE=["NVDA","MSFT","AAPL","GOOGL","AMZN","META","AVGO","AMD","TSLA","TSM","ASML","ORCL","CRM","ARM","PLTR","SMCI","MRVL","ANET","DELL","PANW","CRWD","NET","AMAT","KLAC","MU","CEG","VST"];
 var NAMES={};
 try{ if(window.opener&&window.opener.STOCKS&&window.opener.STOCKS.length){ UNIVERSE=window.opener.STOCKS.map(function(s){return s.t;}); window.opener.STOCKS.forEach(function(s){NAMES[s.t]=s.n;}); } }catch(e){}
-var TF="1D", DATA=[], timer=null, busy=false;
+var TF="1D", DATA=[], timer=null, busy=false, BYSYM={};
 var TF_LBL={"1D":"1 DAY","1W":"1 WEEK","2W":"2 WEEKS","4W":"4 WEEKS"};
+var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
+function fmpJSON(path){return fetch(FMP+path+(path.indexOf("?")>=0?"&":"?")+"apikey="+FMP_KEY).then(function(r){if(!r.ok)throw new Error("FMP "+r.status);return r.json();});}
+function fmpMovers(kind){
+  var s={gainers:"/stable/biggest-gainers",losers:"/stable/biggest-losers",actives:"/stable/most-actives"}[kind];
+  var v={gainers:"/api/v3/stock_market/gainers",losers:"/api/v3/stock_market/losers",actives:"/api/v3/stock_market/actives"}[kind];
+  return fmpJSON(s).catch(function(){return fmpJSON(v);}).then(function(a){return Array.isArray(a)?a:[];}).catch(function(){return [];});
+}
+function ensure(sym){if(!BYSYM[sym]){BYSYM[sym]={tk:sym,name:NAMES[sym]||"",price:null,r:{"1D":null,"1W":null,"2W":null,"4W":null}};}return BYSYM[sym];}
+function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\s]/g,""));return (v==null||isNaN(v))?null:v;}
+function syncData(){DATA=Object.keys(BYSYM).map(function(k){return BYSYM[k];});}
 function getBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u);},function(u){return "https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u);}];}
 function tryFetch(url,i){
   i=i||0;var B=getBuilders();
@@ -3454,23 +3464,43 @@ function render(){
   var ths=document.querySelectorAll("th[data-c]");
   for(var i=0;i<ths.length;i++){ths[i].className=(ths[i].getAttribute("data-c")===TF?"hot":"");}
 }
+function loadHistory(){
+  var syms=Object.keys(BYSYM),done=0,total=syms.length;
+  setStatus("Loading history 0/"+total+"…",false);
+  return pool(syms,function(sym){
+    return fetchTicker(sym).then(function(rr){
+      done++;
+      if(rr){var o=ensure(sym);if(o.price==null)o.price=rr.price;o.r["1W"]=rr.r["1W"];o.r["2W"]=rr.r["2W"];o.r["4W"]=rr.r["4W"];if(o.r["1D"]==null)o.r["1D"]=rr.r["1D"];render();}
+      if(done<total)setStatus("Loading history "+done+"/"+total+"…",false);
+      return rr;
+    });
+  },10);
+}
 function loadAll(){
   if(busy)return;busy=true;
-  DATA=[];render();
-  var total=UNIVERSE.length,done=0;
-  setStatus("Loading 0/"+total+"…",false);
-  pool(UNIVERSE,function(tk){
-    return fetchTicker(tk).then(function(res){
-      done++;
-      if(res){DATA.push(res);render();}
-      if(done<total)setStatus("Loading "+done+"/"+total+"…",false);
-      return res;
+  BYSYM={};DATA=[];render();
+  setStatus("Loading whole-market movers…",false);
+  Promise.all([fmpMovers("gainers"),fmpMovers("losers"),fmpMovers("actives")]).then(function(res){
+    var got=0;
+    [res[0],res[1],res[2]].forEach(function(arr){
+      (arr||[]).slice(0,40).forEach(function(q){
+        var sym=q.symbol||q.ticker;if(!sym)return;got++;
+        var o=ensure(sym);
+        if(!o.name)o.name=q.name||q.companyName||"";
+        var p=pnum(q.price!=null?q.price:q.regularMarketPrice);if(p!=null)o.price=p;
+        var pct=pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage);
+        if(pct!=null)o.r["1D"]=pct;
+      });
     });
-  },10).then(function(){
-    busy=false;
-    if(!DATA.length){setStatus("No data — proxies/CORS blocked. Try REFRESH.",true);}
-    else{setStatus("● "+DATA.length+" loaded",false);stamp();render();}
-  });
+    UNIVERSE.forEach(function(sym){ensure(sym);});
+    syncData();render();
+    if(got===0)setStatus("FMP movers empty — showing watchlist. REFRESH to retry.",true);
+    return loadHistory();
+  }).catch(function(e){
+    setStatus("FMP movers unavailable ("+e.message+") — using watchlist.",true);
+    UNIVERSE.forEach(function(sym){ensure(sym);});syncData();render();
+    return loadHistory();
+  }).then(function(){busy=false;syncData();stamp();if(DATA.length)setStatus("● "+DATA.length+" symbols",false);render();});
 }
 function setTF(tf){TF=tf;var t=document.querySelectorAll(".tf");for(var i=0;i<t.length;i++){t[i].className="tf"+(t[i].getAttribute("data-tf")===tf?" active":"");}render();}
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
