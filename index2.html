@@ -1427,8 +1427,101 @@ function updateClock() {
   const time = new Date().toLocaleTimeString('en-US', { hour12: false });
   const loaded = Object.keys(prices).filter(k => prices[k]?.price).length;
   const total  = STOCKS.length;
-  document.getElementById('liveTime').textContent =
-    loaded > 0 ? `${time} · ${loaded}/${total}` : (fmpStatus || time);
+  const el = document.getElementById('liveTime');
+  el.textContent = (loaded > 0 ? `${time} · ${loaded}/${total}` : (fmpStatus || time)) + (revalStatus.startsWith('✓') ? ' · ✓ levels live' : revalStatus ? ' · revalidating…' : '');
+  if (revalStatus) el.title = revalStatus;
+}
+
+// ═══════════════════════════════════════════
+// REVALIDATION — refresh exchange, fair value, entries & strategy from live
+// FMP data (quotes w/ 50/200-day MAs + analyst price-target consensus).
+// The hardcoded values in STOCKS remain as the fallback if FMP is unreachable.
+// ═══════════════════════════════════════════
+let revalStatus = '';
+function tvExchange(ex) {
+  ex = (ex || '').toUpperCase();
+  if (ex.includes('NASDAQ')) return 'NASDAQ';
+  if (ex === 'AMEX' || ex.includes('ARCA') || ex.includes('AMERICAN') || ex.includes('BATS') || ex.includes('CBOE')) return 'AMEX';
+  if (ex.includes('NYSE')) return 'NYSE';
+  if (ex.includes('OTC')) return 'OTC';
+  return null;
+}
+const r2 = v => Math.round(v * 100) / 100;
+async function fmpGet(path) {
+  const sep = path.includes('?') ? '&' : '?';
+  const r = await fetch(`${FMP}${path}${sep}apikey=${FMP_KEY}`, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+async function priceTarget(t) {
+  for (const p of [`/stable/price-target-consensus?symbol=${t}`, `/api/v4/price-target-consensus?symbol=${t}`]) {
+    try {
+      let d = await fmpGet(p);
+      if (Array.isArray(d)) d = d[0];
+      if (d && (d.targetConsensus || d.targetMedian)) return d;
+    } catch (e) { /* try next */ }
+  }
+  return null;
+}
+async function revalidate(list) {
+  const tickers = list || STOCKS.map(s => s.t);
+  revalStatus = `Revalidating ${tickers.length}…`;
+  // 1) Full quotes in batches of 100: price, 50/200-day MA, 52-wk range, exchange
+  const q = {};
+  for (let i = 0; i < tickers.length; i += 100) {
+    const c = tickers.slice(i, i + 100).join(',');
+    let arr = [];
+    try { arr = await fmpGet(`/api/v3/quote/${c}`); }
+    catch (e) { try { arr = await fmpGet(`/stable/batch-quote?symbols=${c}`); } catch (e2) {} }
+    (Array.isArray(arr) ? arr : []).forEach(x => { if (x.symbol) q[x.symbol] = x; });
+  }
+  // 2) Analyst price-target consensus (8 in parallel)
+  const tgt = {}; let idx = 0;
+  const worker = async () => { while (idx < tickers.length) { const t = tickers[idx++]; const d = await priceTarget(t); if (d) tgt[t] = d; } };
+  await Promise.all(Array.from({ length: 8 }, worker));
+  // 3) Recompute each stock's levels from live data
+  let n = 0;
+  for (const s of STOCKS) {
+    if (!tickers.includes(s.t)) continue;
+    const x = q[s.t]; if (!x) continue;
+    const ex = tvExchange(x.exchange); if (ex) s.ex = ex;
+    const px = x.price, m50 = x.priceAvg50, m200 = x.priceAvg200, lo = x.yearLow, hi = x.yearHigh;
+    if (!px) continue;
+    if (!s._orig) s._orig = { fvL: s.fvL, fvH: s.fvH, e: s.e.slice(), strat: s.strat };
+    // Fair value: analyst consensus ±10% (ETFs / no coverage → 200-day band)
+    const t = tgt[s.t], cons = t ? (t.targetConsensus || t.targetMedian) : null;
+    if (cons > 0) {
+      s.fvL = r2(Math.max(t.targetLow || 0, cons * 0.90));
+      s.fvH = r2(cons * 1.10);
+      if (s.fvL >= s.fvH) s.fvL = r2(cons * 0.90);
+      s.fvSrc = `Analyst consensus $${cons.toFixed(2)}` + (t.targetLow && t.targetHigh ? ` · street range $${t.targetLow}–$${t.targetHigh}` : '') + ' · FV = consensus ±10%';
+    } else if (m200) {
+      const v = Math.min(0.6, Math.max(0.02, (hi && lo) ? (hi - lo) / px : 0.25));
+      s.fvL = r2(m200 * (1 - 0.25 * v)); s.fvH = r2(m200 * (1 + 0.5 * v));
+      s.fvSrc = 'No analyst coverage (ETF/uncovered) · FV = 200-day avg band, scaled by volatility';
+    }
+    // Entries from live supports: E1 ≈ 50-day, E2 ≈ 200-day, E3 ≈ near 52-wk low.
+    // When a support isn't below price, step down by the stock's own volatility
+    // (52-wk range as % of price) so a T-bill ETF and a volatile small-cap both get sane levels.
+    const vol = Math.min(0.6, Math.max(0.02, (hi && lo) ? (hi - lo) / px : 0.25));
+    const e1 = (m50 && m50 < px) ? m50 : px * (1 - 0.08 * vol);
+    const e2 = (m200 && m200 < e1 * 0.98) ? m200 : e1 * (1 - 0.25 * vol);
+    let e3 = Math.max((lo || 0) * 1.02, e2 * (1 - 0.3 * vol));
+    if (e3 >= e2 * 0.99) e3 = e2 * (1 - 0.2 * vol);
+    s.e = [r2(e1), r2(e2), r2(e3)];
+    s.eSrc = 'E1 ≈ 50-day avg · E2 ≈ 200-day avg · E3 ≈ near 52-wk low';
+    // Strategy from where price sits vs the fresh levels
+    const belowFV = px < s.fvL, nearE1 = px <= s.e[0] * 1.03;
+    s.strat = belowFV && nearE1 ? 'buy now'
+            : (belowFV || nearE1) ? 'gradually accumulate'
+            : px <= s.fvH ? 'buy on pullbacks' : 'watch';
+    s.revalidated = true; n++;
+  }
+  revalStatus = `✓ Revalidated ${n}/${tickers.length} (${Object.keys(tgt).length} w/ analyst targets) · ${new Date().toLocaleTimeString('en-US', { hour12: false })}`;
+  renderWatchlist(); renderHdrStats(); renderTape(); renderDetail(selTicker); updateClock();
+  const cur = STOCKS.find(x => x.t === selTicker);
+  if (cur && tickers.includes(cur.t)) renderChart(cur.t, cur.ex, curInterval);
+  return n;
 }
 
 // ═══════════════════════════════════════════
@@ -1768,6 +1861,7 @@ function renderDetail(ticker) {
         <span>${fmtPx(s.fvL)} – ${fmtPx(s.fvH)}</span>
         ${px ? `<span class="${fvCls}">${fvLabel}</span>` : ''}
       </div>
+      <div style="font-size:9px;color:var(--t3);margin-top:5px">${s.fvSrc ? '✓ ' + s.fvSrc : 'Static estimate (not yet revalidated)'}</div>
     </div>
 
     <!-- PRICE METRICS -->
@@ -1780,6 +1874,7 @@ function renderDetail(ticker) {
     <div class="dsec">
       <div class="dsec-title">Entry Levels</div>
       ${entryHTML}
+      <div style="font-size:9px;color:var(--t3);margin-top:5px">${s.eSrc ? '✓ ' + s.eSrc : 'Static estimate (not yet revalidated)'}</div>
     </div>
 
     ${s.type === 'portfolio' ? `
@@ -1925,7 +2020,7 @@ async function addStock() {
       fvH:   Math.round(px * 1.10),
       e:     [Math.round(px*0.90), Math.round(px*0.80), Math.round(px*0.70)],
       type:  'watchlist',
-      ex:    (q.exchange || '').toUpperCase().includes('NASDAQ') ? 'NASDAQ' : 'NYSE',
+      ex:    tvExchange(q.exchange) || 'NASDAQ',
       note:  'Custom added — update entry levels as needed.',
     };
 
@@ -1943,6 +2038,7 @@ async function addStock() {
     renderHdrStats();
     renderTape();
     selectStock(q.symbol);
+    revalidate([q.symbol]).catch(() => {});
 
   } catch(e) {
     alert('Could not find ticker: ' + ticker + '\nCheck the symbol and try again.');
@@ -3408,7 +3504,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R16</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R17</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3649,7 +3745,7 @@ tr.best .sym{color:var(--green);}
     <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
   </tr></thead><tbody id="body"><tr><td colspan="10" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R16</span></div>
+<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R17</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3854,6 +3950,10 @@ function openEntries(){
 
   // First price fetch
   await refreshAll();
+
+  // Revalidate exchange / fair value / entries / strategy from live FMP data
+  revalidate().catch(e => { revalStatus = 'Revalidation failed: ' + e.message; });
+  window.setInterval(() => revalidate().catch(() => {}), 30 * 60 * 1000);
 
   // Fetch commodities + render macro events + earnings calendar
   renderMacroEvents();
