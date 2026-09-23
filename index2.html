@@ -3506,7 +3506,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R19</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R20</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3700,6 +3700,9 @@ tr.best .sym{color:var(--green);}
 .mc{color:var(--t2);}
 .scr{color:var(--amber);font-weight:bold;}
 .play{color:var(--t1);text-align:left;font-size:10px;}
+.sma{color:var(--amber);}
+.dmbar{display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px 8px;border:1px solid var(--amber);background:rgba(240,168,0,.06);}
+.dmbar span{color:var(--amber);font-weight:bold;letter-spacing:1px;}
 .sec{color:var(--t2);text-align:left;font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis;}
 .why{color:var(--t1);text-align:left;font-size:10px;white-space:normal;min-width:300px;max-width:460px;line-height:1.35;}
 .why b{color:var(--amber);font-weight:normal;}
@@ -3717,7 +3720,7 @@ tr.best .sym{color:var(--green);}
 <body>
 <div class="top">
   <div class="dot"></div>
-  <div class="title">🎯 PERFECT ENTRIES</div>
+  <div class="title">🎯 PERFECT ENTRIES <span style="font-size:10px;color:var(--t2)">R20</span></div>
   <div id="status">Init</div>
   <div class="spacer"></div>
   <span style="font-size:10px;color:var(--t2)">MIN CAP</span>
@@ -3744,10 +3747,10 @@ tr.best .sym{color:var(--green);}
 <div class="wrap">
   <table><thead><tr>
     <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th><th class="l">SECTOR</th>
-    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>vs 200D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
-  </tr></thead><tbody id="body"><tr><td colspan="11" class="empty">Scanning…</td></tr></tbody></table>
+    <th>PRICE</th><th>200D SMA</th><th>vs 200D</th><th>50D SMA</th><th>vs 50D</th><th>MCAP</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
+  </tr></thead><tbody id="body"><tr><td colspan="13" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R19</span></div>
+<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R20</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3845,10 +3848,10 @@ function render(){
   var d=document.getElementById("playDesc");
   var KEY=K();
   var tog="";
-  if(PLAY==="dip")tog="<div style='margin-bottom:6px'><button class='pl"+(DIPMODE==="below"?" active":"")+"' data-dm='below'>BELOW 200-DAY SMA</button> <button class='pl"+(DIPMODE==="above"?" active":"")+"' data-dm='above'>ABOVE 200-DAY (classic)</button></div>";
+  if(PLAY==="dip")tog="<div class='dmbar'><span>200-DAY SMA FILTER:</span><button class='pl"+(DIPMODE==="below"?" active":"")+"' data-dm='below'>▼ PRICE BELOW 200D SMA</button><button class='pl"+(DIPMODE==="above"?" active":"")+"' data-dm='above'>▲ PRICE ABOVE 200D SMA</button></div>";
   if(d&&PLAYS[KEY])d.innerHTML=tog+"<b style='color:var(--green)'>"+esc(PLAYS[KEY].name)+"</b> — <span style='color:var(--amber)'>"+esc(PLAYS[KEY].type)+"</span> &middot; "+esc(PLAYS[KEY].desc);
   var v=DATA.filter(function(o){var cp=(o.cap!=null?o.cap:CAPS[o.tk]);return o.s&&o.s[KEY]!=null&&(cp==null||cp>=MINCAP)&&inFocus(o.sec,o.ind);}).sort(function(a,b){return b.s[KEY]-a.s[KEY];}).slice(0,10);
-  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="11" class="empty">'+(DATA.length?"No matches for this play/filter":"Scanning…")+'</td></tr>';return;}
+  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="13" class="empty">'+(DATA.length?"No matches for this play/filter":"Scanning…")+'</td></tr>';return;}
   var out="";
   for(var i=0;i<v.length;i++){
     var o=v[i];var rt=rate(o.s[KEY]);var rc=rt>=8?"r-hi":rt>=6?"r-md":"r-lo";
@@ -3859,9 +3862,11 @@ function render(){
       +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
       +'<td class="sec" title="'+esc(secTxt)+'">'+esc(secTxt||"—")+'</td>'
       +'<td class="px">'+money(o.price)+'</td>'
-      +'<td class="mc">'+capf(o.cap!=null?o.cap:CAPS[o.tk])+'</td>'
-      +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
+      +'<td class="sma">'+money(o.ma200)+'</td>'
       +'<td class="'+(o.d200>=0?"up":"dn")+'">'+fpct(o.d200)+'</td>'
+      +'<td class="sma">'+money(o.ma50)+'</td>'
+      +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
+      +'<td class="mc">'+capf(o.cap!=null?o.cap:CAPS[o.tk])+'</td>'
       +'<td class="dn">'+fpct(-o.fh)+'</td>'
       +'<td class="rate '+rc+'">'+rt+'/10</td>'
       +'<td class="why">'+why(o,KEY)+'</td>'
