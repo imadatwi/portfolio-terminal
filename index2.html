@@ -941,7 +941,7 @@ let STOCKS = [
   // ── Memory ──
   { t:'STX',   n:'Seagate Technology',       seg:'Memory / Storage',     w:0, sc:68, strat:'buy on pullbacks',     fvL:380, fvH:480, e:[390,340,290],  type:'watchlist', ex:'NASDAQ', tier:'high', note:'Mass capacity HDDs for cloud. HAMR technology ramp.' },
   { t:'WDC',   n:'Western Digital',          seg:'Memory / Storage',     w:0, sc:66, strat:'watch',               fvL:250, fvH:340, e:[260,220,180],  type:'watchlist', ex:'NASDAQ', tier:'avg',  note:'Flash + HDD. Post-split pure-play flash could re-rate.' },
-  { t:'PSTG',  n:'Pure Storage',             seg:'Memory / Flash',       w:0, sc:78, strat:'buy on pullbacks',     fvL:70,  fvH:100, e:[72,62,52],     type:'watchlist', ex:'NYSE',   tier:'avg',  note:'All-flash enterprise storage. Evergreen subscription model.' },
+  { t:'PSTG',  n:'Everpure (fka Pure Storage)', seg:'Memory / Flash',       w:0, sc:78, strat:'buy on pullbacks',     fvL:70,  fvH:100, e:[72,62,52],     type:'watchlist', ex:'NYSE',   tier:'avg',  note:'Renamed from Pure Storage to Everpure, Inc. (Feb 2026); ticker unchanged. All-flash storage + data management, Evergreen subscriptions.' },
 
   // ── Optics ──
   { t:'LITE',  n:'Lumentum Holdings',        seg:'Optics / Photonics',   w:0, sc:70, strat:'watch',               fvL:500, fvH:700, e:[520,440,360],  type:'watchlist', ex:'NASDAQ', tier:'high', note:'Optical components for telecom + 3D sensing. Cyclical recovery.' },
@@ -1485,6 +1485,7 @@ async function revalidate(list) {
     if (!tickers.includes(s.t)) continue;
     const x = q[s.t]; if (!x) continue;
     const ex = tvExchange(x.exchange); if (ex) s.ex = ex;
+    if (x.name) s.officialName = x.name;
     const px = x.price, m50 = x.priceAvg50, m200 = x.priceAvg200, lo = x.yearLow, hi = x.yearHigh;
     if (!px) continue;
     if (!s._orig) s._orig = { fvL: s.fvL, fvH: s.fvH, e: s.e.slice(), strat: s.strat };
@@ -1889,6 +1890,7 @@ function renderDetail(ticker) {
     <div class="dsec">
       <div class="dsec-title">Classification</div>
       <div class="drow"><span class="dlbl">Segment</span><span class="dval">${s.seg}</span></div>
+      ${s.officialName && !s.officialName.toLowerCase().startsWith(s.n.toLowerCase().split(/[ (,]/)[0]) ? `<div class="drow"><span class="dlbl">Official name</span><span class="dval" style="color:var(--amber)" title="Name reported by FMP differs from your label — possible rename">${s.officialName} ⚠</span></div>` : ''}
       <div class="drow"><span class="dlbl">Exchange</span><span class="dval">${s.ex}</span></div>
       <div class="drow"><span class="dlbl">Type</span><span class="dval">${s.type === 'portfolio' ? 'ACTIVE POSITION' : 'WATCHLIST'}</span></div>
     </div>
@@ -3504,7 +3506,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R17</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R18</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3745,7 +3747,7 @@ tr.best .sym{color:var(--green);}
     <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
   </tr></thead><tbody id="body"><tr><td colspan="10" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R17</span></div>
+<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R18</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
