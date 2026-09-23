@@ -3408,7 +3408,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R12</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R13</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3447,8 +3447,8 @@ function fmpQuotes(syms){
 function syncData(){DATA=Object.keys(BYSYM).map(function(k){return BYSYM[k];});}
 function getBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u);},function(u){return "https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u);}];}
 function tryFetch(url,i){
-  i=i||0;var B=getBuilders();
-  return fetch(B[i](url)).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+  i=i||0;var B=getBuilders();var opt={};try{opt.signal=AbortSignal.timeout(9000);}catch(e){}
+  return fetch(B[i](url),opt).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
   .catch(function(e){if(i+1<B.length)return tryFetch(url,i+1);throw e;});
 }
 function computeRet(closes){
@@ -3641,7 +3641,7 @@ tr.best .sym{color:var(--green);}
     <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>52W POS</th><th>RATING</th>
   </tr></thead><tbody id="body"><tr><td colspan="9" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R12</span></div>
+<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R13</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3656,7 +3656,7 @@ function pool(items,worker,conc){return new Promise(function(resolve){var idx=0,
 var NAMES={}, CAPS={};
 try{ if(window.opener&&window.opener.STOCKS)window.opener.STOCKS.forEach(function(s){NAMES[s.t]=s.n;}); }catch(e){}
 function getBuilders(){return [function(u){return u;},function(u){return "https://corsproxy.io/?url="+encodeURIComponent(u);},function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u);},function(u){return "https://api.codetabs.com/v1/proxy/?quest="+encodeURIComponent(u);}];}
-function yfetch(url,i){i=i||0;var B=getBuilders();return fetch(B[i](url)).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).catch(function(e){if(i+1<B.length)return yfetch(url,i+1);throw e;});}
+function yfetch(url,i){i=i||0;var B=getBuilders();var opt={};try{opt.signal=AbortSignal.timeout(9000);}catch(e){}return fetch(B[i](url),opt).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).catch(function(e){if(i+1<B.length)return yfetch(url,i+1);throw e;});}
 function avgTail(a,k){var m=Math.min(k,a.length);if(!m)return null;var s=0;for(var i=a.length-m;i<a.length;i++)s+=a[i];return s/m;}
 function fetchYear(sym){
   var url="https://query1.finance.yahoo.com/v8/finance/chart/"+encodeURIComponent(sym)+"?interval=1d&range=1y";
@@ -3732,22 +3732,25 @@ function render(){
 }
 function loadEntries(){
   if(busy)return;busy=true;DATA=[];CAPS={};render();
-  var uni={};
-  try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uni[s]=1;}); }catch(e){}
-  try{ if(window.opener&&window.opener.STOCKS)window.opener.STOCKS.forEach(function(s){uni[s.t]=1;}); }catch(e){}
-  var syms=Object.keys(uni);
-  if(!syms.length)syms=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","JPM","XOM","LLY","WMT","UNH","CAT","BA","COST","HD"];
-  fmpQuotes(syms).then(function(){render();});
-  var total=syms.length,done=0;
-  setStatus("Scanning "+total+" names (Yahoo daily closes)…",false);
-  pool(syms,function(sym){
-    return fetchYear(sym).then(function(d){
-      done++;
-      if(d){var o={tk:sym,name:NAMES[sym]||"",price:d.price,ma50:d.ma50,ma200:d.ma200,hi52:d.hi52,lo52:d.lo52,chg:d.chg,vol:d.vol,avgVol:d.avgVol};if(computeAll(o))DATA.push(o);render();}
-      if(done<total)setStatus("Scanning "+Math.min(done,total)+"/"+total+"…",false);
-      return d;
-    });
-  },12).then(function(){busy=false;if(!DATA.length)setStatus("No data — CORS/proxy blocked. RESCAN to retry.",true);else setStatus("● "+DATA.length+" scanned — top 10 per play, rated 1-10",false);render();});
+  try{
+    var uni={};
+    try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uni[s]=1;}); }catch(e){}
+    try{ if(window.opener&&window.opener.STOCKS)window.opener.STOCKS.forEach(function(s){uni[s.t]=1;}); }catch(e){}
+    var syms=Object.keys(uni);
+    if(!syms.length)syms=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","JPM","XOM","LLY","WMT","UNH","CAT","BA","COST","HD"];
+    var total=syms.length,done=0,ok=0,t0=Date.now();
+    setStatus("Starting scan of "+total+" names…",false);
+    fmpQuotes(syms).then(function(){render();}).catch(function(){});
+    pool(syms,function(sym){
+      return fetchYear(sym).then(function(d){
+        done++;
+        if(d){var o={tk:sym,name:NAMES[sym]||"",price:d.price,ma50:d.ma50,ma200:d.ma200,hi52:d.hi52,lo52:d.lo52,chg:d.chg,vol:d.vol,avgVol:d.avgVol};if(computeAll(o)){DATA.push(o);ok++;}}
+        var el=(Date.now()-t0)/1000, eta=done?Math.max(0,Math.round(el/done*(total-done))):0;
+        if(done%4===0||done===total){setStatus("Fetching prices+MAs "+done+"/"+total+" · "+ok+" ranked · "+Math.round(el)+"s elapsed · ~"+eta+"s left",false);render();}
+        return d;
+      }).catch(function(){done++;return null;});
+    },16).then(function(){busy=false;render();if(!DATA.length)setStatus("No data — Yahoo/proxy blocked. Hit RESCAN.",true);else setStatus("✓ Done · "+DATA.length+" ranked in "+Math.round((Date.now()-t0)/1000)+"s · top 10 per play, 1-10",false);});
+  }catch(err){busy=false;setStatus("Error: "+err.message+" — hit RESCAN",true);}
 }
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
 document.getElementById("refreshBtn").addEventListener("click",loadEntries);
