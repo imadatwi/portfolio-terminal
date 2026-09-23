@@ -3506,7 +3506,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R18</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R19</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3744,10 +3744,10 @@ tr.best .sym{color:var(--green);}
 <div class="wrap">
   <table><thead><tr>
     <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th><th class="l">SECTOR</th>
-    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
-  </tr></thead><tbody id="body"><tr><td colspan="10" class="empty">Scanning…</td></tr></tbody></table>
+    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>vs 200D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
+  </tr></thead><tbody id="body"><tr><td colspan="11" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R18</span></div>
+<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R19</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3786,6 +3786,7 @@ function fmpQuotes(syms){
 var PLAY="dip";
 var PLAYS={
   dip:{name:"DIP BUY",type:"Long or Call",desc:"Pullback in an uptrend — price above the 200-day MA, 50-day rising, dipping back to just above the 50-day (support/buy zone). Best risk/reward."},
+  dipdeep:{name:"DIP BUY · BELOW 200-DAY",type:"Long / Call (deeper dip, more risk)",desc:"Stocks trading UNDER their 200-day SMA — a deeper pullback. Best when the 50-day is still above the 200-day (bigger uptrend intact), it is only ~3-12% under the 200-day, not sitting at its 52-wk low, and turning up. Trigger: a reclaim of the 200-day."},
   breakout:{name:"BREAKOUT",type:"Call",desc:"Momentum at new highs — strong uptrend, price within a few % of the 52-week high, above both MAs, ideally on heavy volume."},
   oversold:{name:"OVERSOLD BOUNCE",type:"Contrarian (higher risk)",desc:"Beaten-down name in the bottom quarter of its 52-week range that is turning up today. Catches a reversal — can be a falling knife."},
   trend:{name:"TREND RIDER",type:"Long / shares",desc:"Steady grinder comfortably above a rising 50- and 200-day MA, not overextended, not at fresh highs. Hold-the-trend, not a fast trade."},
@@ -3801,12 +3802,15 @@ function computeAll(o){
   var trend=p>m200, align=m50>m200;
   o.d50=d50*100; o.fh=fh*100; o.rng=rng*100; o.d200=d200*100; o.rv=rv; o.trend=trend; o.align=align;
   var s={};
-  var dip=0; if(trend)dip+=30; if(align)dip+=15; dip+=35*band(d50,0.01,0.06); dip+=15*band(fh,0.10,0.12); if(c>=0&&c<=4)dip+=5; if(!trend)dip-=30; s.dip=dip;
+  var dip=0; if(trend)dip+=30; if(align)dip+=15; dip+=35*band(d50,0.01,0.06); dip+=15*band(fh,0.10,0.12); if(c>=0&&c<=4)dip+=5; s.dip=trend?dip:null;
   var brk=0; if(trend)brk+=25; if(align)brk+=15; brk+=35*band(fh,0.0,0.06); brk+=(rv!=null?15*Math.min(1,Math.max(0,(rv-1)/1.5)):6); if(c>0)brk+=10; if(fh>0.12)brk-=25; s.breakout=brk;
   var ovs=0; ovs+=45*band(rng,0.10,0.18); ovs+=(c>0?25:-20); ovs+=15*band(fh,0.45,0.35); if(p<lo*1.02)ovs-=10; if(rv!=null&&rv>1.2)ovs+=10; s.oversold=ovs;
   var trd=0; if(trend)trd+=30; if(align)trd+=20; trd+=25*band(d50,0.05,0.08); trd+=15*band(d200,0.18,0.20); trd+=10*band(fh,0.08,0.10); if(!trend||!align)trd-=25; s.trend=trd;
   var val=0; val+=40*band(fh,0.35,0.15); val+=25*band(d200,0.0,0.12); val+=(c>0?20:-10); val+=15*band(rng,0.35,0.25); s.value=val;
-  ["dip","breakout","oversold","trend","value"].forEach(function(k){s[k]=Math.max(0,Math.min(100,Math.round(s[k])));});
+  var deep=null;
+  if(!trend){deep=0;deep+=40*band(d200,-0.07,0.08);deep+=(align?20:0);deep+=15*band(rng,0.40,0.35);deep+=(c>0?15:-5);if(rv!=null&&rv>1.2)deep+=5;deep+=5*band(d50,-0.03,0.08);}
+  s.dipdeep=deep;
+  ["dip","breakout","oversold","trend","value","dipdeep"].forEach(function(k){if(s[k]!=null)s[k]=Math.max(0,Math.min(100,Math.round(s[k])));});
   o.s=s;
   return true;
 }
@@ -3823,6 +3827,7 @@ function why(o,pl){
   var up=(o.chg||0)>=0, day=(up?"up ":"down ")+Math.abs(o.chg||0).toFixed(1)+"% today";
   var vol=o.rv!=null?(o.rv.toFixed(1)+"x avg volume"):"";
   var t200=o.trend?("above its 200-day ("+pp(o.d200)+")"):("below its 200-day ("+pp(o.d200)+")");
+  if(pl==="dipdeep")return "<b>Deep dip below the 200-day.</b> Trading "+pp(o.d200)+" vs its 200-day (~$"+money(o.ma200)+"), 50-day "+(o.align?"still above the 200-day (bigger uptrend intact)":"below the 200-day (trend weakening, more risk)")+", "+Math.round(o.rng)+"% up its 52-wk range, "+day+(vol?", "+vol:"")+". <b>Trigger:</b> reclaim of the 200-day. <b>Stop:</b> below 52-wk low (~$"+money(o.lo52)+").";
   if(pl==="dip")return "<b>Uptrend pullback.</b> Trading "+t200+", 50-day "+(o.align?"above":"below")+" 200-day, and sitting right on 50-day support ("+pp(o.d50)+"). "+Math.round(o.fh)+"% below its 52-wk high = room to run. <b>Stop:</b> below 50-day (~$"+money(o.ma50)+").";
   if(pl==="breakout")return "<b>Momentum at highs.</b> Only "+o.fh.toFixed(1)+"% from its 52-wk high, "+t200+", "+pp(o.d50)+" vs 50-day"+(vol?", "+vol:"")+", "+day+". Calls capture a push to new highs. <b>Stop:</b> below 50-day (~$"+money(o.ma50)+").";
   if(pl==="oversold")return "<b>Mean-reversion bounce.</b> Sits "+Math.round(o.rng)+"% up its 52-wk range (0% = the low), "+Math.round(o.fh)+"% off the high, "+day+(vol?", "+vol:"")+". High risk: needs follow-through. <b>Stop:</b> under 52-wk low (~$"+money(o.lo52)+").";
@@ -3832,15 +3837,21 @@ function why(o,pl){
 }
 function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
 function setCap(v){MINCAP=Number(v)||1e9;loadEntries();}
+var DIPMODE="below";
+function K(){return (PLAY==="dip"&&DIPMODE==="below")?"dipdeep":PLAY;}
+function setDipMode(m){DIPMODE=m;render();}
 function setPlay(pl){PLAY=pl;var t=document.querySelectorAll(".pl");for(var i=0;i<t.length;i++){t[i].className="pl"+(t[i].getAttribute("data-pl")===pl?" active":"");}render();}
 function render(){
   var d=document.getElementById("playDesc");
-  if(d&&PLAYS[PLAY])d.innerHTML="<b style='color:var(--green)'>"+esc(PLAYS[PLAY].name)+"</b> — <span style='color:var(--amber)'>"+esc(PLAYS[PLAY].type)+"</span> &middot; "+esc(PLAYS[PLAY].desc);
-  var v=DATA.filter(function(o){var cp=(o.cap!=null?o.cap:CAPS[o.tk]);return o.s&&o.s[PLAY]!=null&&(cp==null||cp>=MINCAP)&&inFocus(o.sec,o.ind);}).sort(function(a,b){return b.s[PLAY]-a.s[PLAY];}).slice(0,10);
-  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="10" class="empty">Scanning…</td></tr>';return;}
+  var KEY=K();
+  var tog="";
+  if(PLAY==="dip")tog="<div style='margin-bottom:6px'><button class='pl"+(DIPMODE==="below"?" active":"")+"' data-dm='below'>BELOW 200-DAY SMA</button> <button class='pl"+(DIPMODE==="above"?" active":"")+"' data-dm='above'>ABOVE 200-DAY (classic)</button></div>";
+  if(d&&PLAYS[KEY])d.innerHTML=tog+"<b style='color:var(--green)'>"+esc(PLAYS[KEY].name)+"</b> — <span style='color:var(--amber)'>"+esc(PLAYS[KEY].type)+"</span> &middot; "+esc(PLAYS[KEY].desc);
+  var v=DATA.filter(function(o){var cp=(o.cap!=null?o.cap:CAPS[o.tk]);return o.s&&o.s[KEY]!=null&&(cp==null||cp>=MINCAP)&&inFocus(o.sec,o.ind);}).sort(function(a,b){return b.s[KEY]-a.s[KEY];}).slice(0,10);
+  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="11" class="empty">'+(DATA.length?"No matches for this play/filter":"Scanning…")+'</td></tr>';return;}
   var out="";
   for(var i=0;i<v.length;i++){
-    var o=v[i];var rt=rate(o.s[PLAY]);var rc=rt>=8?"r-hi":rt>=6?"r-md":"r-lo";
+    var o=v[i];var rt=rate(o.s[KEY]);var rc=rt>=8?"r-hi":rt>=6?"r-md":"r-lo";
     var secTxt=o.ind||o.sec||o.seg||"";
     out+='<tr data-tk="'+esc(o.tk)+'"'+(i<3?' class="best"':'')+'>'
       +'<td class="rk">'+(i+1)+'</td>'
@@ -3850,9 +3861,10 @@ function render(){
       +'<td class="px">'+money(o.price)+'</td>'
       +'<td class="mc">'+capf(o.cap!=null?o.cap:CAPS[o.tk])+'</td>'
       +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
+      +'<td class="'+(o.d200>=0?"up":"dn")+'">'+fpct(o.d200)+'</td>'
       +'<td class="dn">'+fpct(-o.fh)+'</td>'
       +'<td class="rate '+rc+'">'+rt+'/10</td>'
-      +'<td class="why">'+why(o,PLAY)+'</td>'
+      +'<td class="why">'+why(o,KEY)+'</td>'
       +'</tr>';
   }
   document.getElementById("body").innerHTML=out;
@@ -3926,6 +3938,7 @@ function loadEntriesYahoo(){
 }
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
 document.getElementById("refreshBtn").addEventListener("click",loadEntries);
+document.getElementById("playDesc").addEventListener("click",function(e){var b=e.target.closest("[data-dm]");if(b)setDipMode(b.getAttribute("data-dm"));});
 document.getElementById("playTabs").addEventListener("click",function(e){var b=e.target.closest(".pl");if(b)setPlay(b.getAttribute("data-pl"));});
 document.getElementById("body").addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});
 loadEntries();
