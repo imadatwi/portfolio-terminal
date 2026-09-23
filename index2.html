@@ -3408,7 +3408,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R15</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R16</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3493,7 +3493,7 @@ function rowsHtml(list){
       +'<td class="sym">'+esc(o.tk)+'</td>'
       +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
       +'<td class="px">'+money(o.price)+'</td>'
-      +'<td class="mc">'+capf(CAPS[o.tk])+'</td>'
+      +'<td class="mc">'+capf(o.cap)+'</td>'
       +'<td class="vl">'+vol(o.vol)+'</td>'
       +cell(o.r["1D"],"1D")+cell(o.r["1W"],"1W")+cell(o.r["2W"],"2W")+cell(o.r["4W"],"4W")
       +'</tr>';
@@ -3602,6 +3602,9 @@ tr.best .sym{color:var(--green);}
 .mc{color:var(--t2);}
 .scr{color:var(--amber);font-weight:bold;}
 .play{color:var(--t1);text-align:left;font-size:10px;}
+.sec{color:var(--t2);text-align:left;font-size:10px;max-width:130px;overflow:hidden;text-overflow:ellipsis;}
+.why{color:var(--t1);text-align:left;font-size:10px;white-space:normal;min-width:300px;max-width:460px;line-height:1.35;}
+.why b{color:var(--amber);font-weight:normal;}
 .plays{display:flex;gap:4px;padding:8px 16px;background:var(--bg1);border-bottom:1px solid var(--border);flex-wrap:wrap;}
 .pl{font-family:var(--font);font-size:10px;background:var(--bg3);color:var(--t2);border:1px solid var(--border2);padding:5px 10px;cursor:pointer;letter-spacing:1px;}
 .pl:hover{color:var(--t1);}
@@ -3625,6 +3628,11 @@ tr.best .sym{color:var(--green);}
     <option value="2000000000">$2B</option>
     <option value="10000000000">$10B</option>
   </select>
+  <span style="font-size:10px;color:var(--t2)">FOCUS</span>
+  <select id="focusSel" onchange="setFocus(this.value)">
+    <option value="1" selected>Tech · Energy · AI Infra</option>
+    <option value="0">All sectors</option>
+  </select>
   <button id="refreshBtn">↻ RESCAN</button>
 </div>
 <div class="plays" id="playTabs">
@@ -3637,11 +3645,11 @@ tr.best .sym{color:var(--green);}
 <div class="desc" id="playDesc"></div>
 <div class="wrap">
   <table><thead><tr>
-    <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th>
-    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>52W POS</th><th>RATING</th>
-  </tr></thead><tbody id="body"><tr><td colspan="9" class="empty">Scanning…</td></tr></tbody></table>
+    <th class="l">#</th><th class="l">SYM</th><th class="l">NAME</th><th class="l">SECTOR</th>
+    <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>RATING</th><th class="l">WHY THIS ENTRY</th>
+  </tr></thead><tbody id="body"><tr><td colspan="10" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R15</span></div>
+<div class="foot">FOCUS = Tech, Energy, Utilities/Power, Comm. Services + AI-infra industries (semis, electrical, data centers, nuclear/uranium, engineering) &middot; market cap ≥ chosen min &middot; top 10 per play, RATING 1-10 (10 = most perfect) with rationale + suggested stop &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R16</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3693,7 +3701,7 @@ function computeAll(o){
   var c=(o.chg==null?0:o.chg);
   var rv=(o.avgVol&&o.vol)?o.vol/o.avgVol:null;
   var trend=p>m200, align=m50>m200;
-  o.d50=d50*100; o.fh=fh*100; o.rng=rng*100;
+  o.d50=d50*100; o.fh=fh*100; o.rng=rng*100; o.d200=d200*100; o.rv=rv; o.trend=trend; o.align=align;
   var s={};
   var dip=0; if(trend)dip+=30; if(align)dip+=15; dip+=35*band(d50,0.01,0.06); dip+=15*band(fh,0.10,0.12); if(c>=0&&c<=4)dip+=5; if(!trend)dip-=30; s.dip=dip;
   var brk=0; if(trend)brk+=25; if(align)brk+=15; brk+=35*band(fh,0.0,0.06); brk+=(rv!=null?15*Math.min(1,Math.max(0,(rv-1)/1.5)):6); if(c>0)brk+=10; if(fh>0.12)brk-=25; s.breakout=brk;
@@ -3705,27 +3713,48 @@ function computeAll(o){
   return true;
 }
 function rate(v){return Math.max(1,Math.min(10,Math.round(v/10)));}
+// ── Sector focus: tech, energy, AI infrastructure and adjacent plays ──
+var FOCUS=true;
+var FOCUS_SECTORS={"Technology":1,"Energy":1,"Utilities":1,"Communication Services":1};
+var FOCUS_IND=/semiconductor|electrical|electronic|computer|software|communication equipment|information technology|internet|data|uranium|nuclear|solar|renewable|power|engineering . construction|industrial machinery|specialty industrial|copper|reit - specialty|scientific . technical|aerospace/i;
+function inFocus(sec,ind){if(!FOCUS)return true;if(!sec&&!ind)return true;if(FOCUS_SECTORS[sec])return true;return FOCUS_IND.test(ind||"");}
+function setFocus(v){FOCUS=(v==="1");loadEntries();}
+// ── Plain-English rationale for each pick, per play ──
+function pp(v){return v==null||isNaN(v)?"—":(v>=0?"+":"")+v.toFixed(1)+"%";}
+function why(o,pl){
+  var up=(o.chg||0)>=0, day=(up?"up ":"down ")+Math.abs(o.chg||0).toFixed(1)+"% today";
+  var vol=o.rv!=null?(o.rv.toFixed(1)+"x avg volume"):"";
+  var t200=o.trend?("above its 200-day ("+pp(o.d200)+")"):("below its 200-day ("+pp(o.d200)+")");
+  if(pl==="dip")return "<b>Uptrend pullback.</b> Trading "+t200+", 50-day "+(o.align?"above":"below")+" 200-day, and sitting right on 50-day support ("+pp(o.d50)+"). "+Math.round(o.fh)+"% below its 52-wk high = room to run. <b>Stop:</b> below 50-day (~$"+money(o.ma50)+").";
+  if(pl==="breakout")return "<b>Momentum at highs.</b> Only "+o.fh.toFixed(1)+"% from its 52-wk high, "+t200+", "+pp(o.d50)+" vs 50-day"+(vol?", "+vol:"")+", "+day+". Calls capture a push to new highs. <b>Stop:</b> below 50-day (~$"+money(o.ma50)+").";
+  if(pl==="oversold")return "<b>Mean-reversion bounce.</b> Sits "+Math.round(o.rng)+"% up its 52-wk range (0% = the low), "+Math.round(o.fh)+"% off the high, "+day+(vol?", "+vol:"")+". High risk: needs follow-through. <b>Stop:</b> under 52-wk low (~$"+money(o.lo52)+").";
+  if(pl==="trend")return "<b>Steady uptrend.</b> "+pp(o.d50)+" above a rising 50-day and "+pp(o.d200)+" above the 200-day, "+Math.round(o.fh)+"% off the high, not overextended. Hold-the-trend shares. <b>Stop:</b> close below 50-day (~$"+money(o.ma50)+").";
+  if(pl==="value")return "<b>Deep-value reversal.</b> "+Math.round(o.fh)+"% below its 52-wk high but "+(o.trend?"back above":"testing")+" the 200-day ("+pp(o.d200)+"), "+day+". Longer-term recovery setup. <b>Stop:</b> below 200-day (~$"+money(o.ma200)+").";
+  return "";
+}
 function setStatus(m,err){var el=document.getElementById("status");if(el){el.textContent=m;el.style.color=err?"#f03050":"#6090b8";}}
 function setCap(v){MINCAP=Number(v)||1e9;loadEntries();}
 function setPlay(pl){PLAY=pl;var t=document.querySelectorAll(".pl");for(var i=0;i<t.length;i++){t[i].className="pl"+(t[i].getAttribute("data-pl")===pl?" active":"");}render();}
 function render(){
   var d=document.getElementById("playDesc");
   if(d&&PLAYS[PLAY])d.innerHTML="<b style='color:var(--green)'>"+esc(PLAYS[PLAY].name)+"</b> — <span style='color:var(--amber)'>"+esc(PLAYS[PLAY].type)+"</span> &middot; "+esc(PLAYS[PLAY].desc);
-  var v=DATA.filter(function(o){return o.s&&o.s[PLAY]!=null&&(CAPS[o.tk]==null||CAPS[o.tk]>=MINCAP);}).sort(function(a,b){return b.s[PLAY]-a.s[PLAY];}).slice(0,10);
-  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="9" class="empty">Scanning…</td></tr>';return;}
+  var v=DATA.filter(function(o){var cp=(o.cap!=null?o.cap:CAPS[o.tk]);return o.s&&o.s[PLAY]!=null&&(cp==null||cp>=MINCAP)&&inFocus(o.sec,o.ind);}).sort(function(a,b){return b.s[PLAY]-a.s[PLAY];}).slice(0,10);
+  if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="10" class="empty">Scanning…</td></tr>';return;}
   var out="";
   for(var i=0;i<v.length;i++){
     var o=v[i];var rt=rate(o.s[PLAY]);var rc=rt>=8?"r-hi":rt>=6?"r-md":"r-lo";
+    var secTxt=o.ind||o.sec||o.seg||"";
     out+='<tr data-tk="'+esc(o.tk)+'"'+(i<3?' class="best"':'')+'>'
       +'<td class="rk">'+(i+1)+'</td>'
       +'<td class="sym">'+esc(o.tk)+'</td>'
       +'<td class="nm" title="'+esc(o.name)+'">'+esc(o.name)+'</td>'
+      +'<td class="sec" title="'+esc(secTxt)+'">'+esc(secTxt||"—")+'</td>'
       +'<td class="px">'+money(o.price)+'</td>'
-      +'<td class="mc">'+capf(o.cap)+'</td>'
+      +'<td class="mc">'+capf(o.cap!=null?o.cap:CAPS[o.tk])+'</td>'
       +'<td class="'+(o.d50>=0?"up":"dn")+'">'+fpct(o.d50)+'</td>'
       +'<td class="dn">'+fpct(-o.fh)+'</td>'
-      +'<td>'+(o.rng==null?"—":Math.round(o.rng)+"%")+'</td>'
       +'<td class="rate '+rc+'">'+rt+'/10</td>'
+      +'<td class="why">'+why(o,PLAY)+'</td>'
       +'</tr>';
   }
   document.getElementById("body").innerHTML=out;
@@ -3742,17 +3771,20 @@ function loadEntries(){
     .then(function(list){
       list=Array.isArray(list)?list:[];
       if(!list.length)throw new Error("screener returned no rows");
+      var all=list.length;
+      list=list.filter(function(x){return inFocus(x.sector,x.industry);});
       list.sort(function(a,b){return (pnum(b.volume)||0)-(pnum(a.volume)||0);});
-      var nameMap={};list.forEach(function(x){nameMap[x.symbol]=x.companyName||x.name||"";});
+      var nameMap={},secMap={},indMap={},capMap={};
+      list.forEach(function(x){nameMap[x.symbol]=x.companyName||x.name||"";secMap[x.symbol]=x.sector||"";indMap[x.symbol]=x.industry||"";var c=pnum(x.marketCap);if(c!=null)capMap[x.symbol]=c;});
       var syms=list.map(function(x){return x.symbol;}).filter(Boolean).slice(0,1500);
       var chunks=chunk(syms,100),done=0,total=syms.length;
-      setStatus("Analyzing "+total+" names…",false);
+      setStatus("Screened "+all+" → "+total+(FOCUS?" in Tech/Energy/AI-infra":"")+" · fetching quotes…",false);
       return pool(chunks,function(c){
         return fmpJSON("/api/v3/quote/"+c.join(",")).catch(function(){return fmpJSON("/stable/batch-quote?symbols="+c.join(","));}).then(function(a){
           (Array.isArray(a)?a:[]).forEach(function(q){
             var sym=q.symbol;if(!sym)return;
-            var mc=pnum(q.marketCap);if(mc!=null)CAPS[sym]=mc;
-            var o={tk:sym,name:nameMap[sym]||q.name||"",price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),lo52:pnum(q.yearLow),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),vol:pnum(q.volume),avgVol:pnum(q.avgVolume)};
+            var mc=pnum(q.marketCap);if(mc==null)mc=capMap[sym];if(mc!=null)CAPS[sym]=mc;
+            var o={tk:sym,name:nameMap[sym]||q.name||"",sec:secMap[sym]||"",ind:indMap[sym]||"",cap:mc,price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),lo52:pnum(q.yearLow),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),vol:pnum(q.volume),avgVol:pnum(q.avgVolume)};
             if(computeAll(o))DATA.push(o);
           });
           done+=c.length;
@@ -3761,7 +3793,7 @@ function loadEntries(){
       },6).then(function(){
         busy=false;render();
         if(!DATA.length){setStatus("Quotes lacked MA data — switching to backup method…",true);loadEntriesYahoo();}
-        else setStatus("✓ "+DATA.length+" ranked · whole market, cap ≥ "+capf(MINCAP)+" · "+Math.round((Date.now()-t0)/1000)+"s",false);
+        else setStatus("✓ "+DATA.length+" ranked · "+(FOCUS?"Tech/Energy/AI-infra":"all sectors")+", cap ≥ "+capf(MINCAP)+" · "+Math.round((Date.now()-t0)/1000)+"s",false);
       });
     }).catch(function(e){
       busy=false;
@@ -3775,17 +3807,18 @@ function loadEntriesYahoo(){
   if(busy)return;busy=true;DATA=[];CAPS={};render();
   try{
     var uni={};
-    try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uni[s]=1;}); }catch(e){}
-    try{ if(window.opener&&window.opener.STOCKS)window.opener.STOCKS.forEach(function(s){uni[s.t]=1;}); }catch(e){}
+    var SEGS={};
+    if(!FOCUS){ try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uni[s]=1;}); }catch(e){} }
+    try{ if(window.opener&&window.opener.STOCKS)window.opener.STOCKS.forEach(function(s){uni[s.t]=1;SEGS[s.t]=s.seg||"";}); }catch(e){}
     var syms=Object.keys(uni);
-    if(!syms.length)syms=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","JPM","XOM","LLY","WMT","UNH","CAT","BA","COST","HD"];
+    if(!syms.length)syms=["NVDA","MSFT","AVGO","AMD","TSM","ANET","VRT","ETN","CEG","VST","XOM","CVX","PLTR","MU","ORCL"];
     var total=syms.length,done=0,ok=0,t0=Date.now();
     setStatus("Starting scan of "+total+" names…",false);
     fmpQuotes(syms).then(function(){render();}).catch(function(){});
     pool(syms,function(sym){
       return fetchYear(sym).then(function(d){
         done++;
-        if(d){var o={tk:sym,name:NAMES[sym]||"",price:d.price,ma50:d.ma50,ma200:d.ma200,hi52:d.hi52,lo52:d.lo52,chg:d.chg,vol:d.vol,avgVol:d.avgVol};if(computeAll(o)){DATA.push(o);ok++;}}
+        if(d){var o={tk:sym,name:NAMES[sym]||"",seg:SEGS[sym]||"",price:d.price,ma50:d.ma50,ma200:d.ma200,hi52:d.hi52,lo52:d.lo52,chg:d.chg,vol:d.vol,avgVol:d.avgVol};if(computeAll(o)){DATA.push(o);ok++;}}
         var el=(Date.now()-t0)/1000, eta=done?Math.max(0,Math.round(el/done*(total-done))):0;
         if(done%4===0||done===total){setStatus("Fetching prices+MAs "+done+"/"+total+" · "+ok+" ranked · "+Math.round(el)+"s elapsed · ~"+eta+"s left",false);render();}
         return d;
