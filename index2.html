@@ -3408,7 +3408,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R13</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R14</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3425,7 +3425,7 @@ function fmpMovers(kind){
   return fmpJSON(s).catch(function(){return fmpJSON(v);}).then(function(a){return Array.isArray(a)?a:[];}).catch(function(){return [];});
 }
 function ensure(sym){if(!BYSYM[sym]){BYSYM[sym]={tk:sym,name:NAMES[sym]||"",price:null,cap:null,vol:null,r:{"1D":null,"1W":null,"2W":null,"4W":null}};}return BYSYM[sym];}
-function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\s]/g,""));return (v==null||isNaN(v))?null:v;}
+function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\\s]/g,""));return (v==null||isNaN(v))?null:v;}
 function vol(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n);}
 function capf(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(1)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
 var MINCAP=1e9;
@@ -3641,12 +3641,12 @@ tr.best .sym{color:var(--green);}
     <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>52W POS</th><th>RATING</th>
   </tr></thead><tbody id="body"><tr><td colspan="9" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R13</span></div>
+<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R14</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
 function fmpJSON(path){return fetch(FMP+path+(path.indexOf("?")>=0?"&":"?")+"apikey="+FMP_KEY).then(function(r){if(!r.ok)throw new Error("FMP "+r.status);return r.json();});}
-function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\s]/g,""));return (v==null||isNaN(v))?null:v;}
+function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\\s]/g,""));return (v==null||isNaN(v))?null:v;}
 function money(n){if(n==null||isNaN(n))return "—";return Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function capf(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(1)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
@@ -3710,7 +3710,7 @@ function setCap(v){MINCAP=Number(v)||1e9;loadEntries();}
 function setPlay(pl){PLAY=pl;var t=document.querySelectorAll(".pl");for(var i=0;i<t.length;i++){t[i].className="pl"+(t[i].getAttribute("data-pl")===pl?" active":"");}render();}
 function render(){
   var d=document.getElementById("playDesc");
-  if(d&&PLAYS[PLAY])d.innerHTML="<b style=\"color:var(--green)\">"+esc(PLAYS[PLAY].name)+"</b> — <span style=\"color:var(--amber)\">"+esc(PLAYS[PLAY].type)+"</span> &middot; "+esc(PLAYS[PLAY].desc);
+  if(d&&PLAYS[PLAY])d.innerHTML="<b style='color:var(--green)'>"+esc(PLAYS[PLAY].name)+"</b> — <span style='color:var(--amber)'>"+esc(PLAYS[PLAY].type)+"</span> &middot; "+esc(PLAYS[PLAY].desc);
   var v=DATA.filter(function(o){return o.s&&o.s[PLAY]!=null&&(CAPS[o.tk]==null||CAPS[o.tk]>=MINCAP);}).sort(function(a,b){return b.s[PLAY]-a.s[PLAY];}).slice(0,10);
   if(!v.length){document.getElementById("body").innerHTML='<tr><td colspan="9" class="empty">Scanning…</td></tr>';return;}
   var out="";
