@@ -3408,7 +3408,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R14</span></div>
+<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R15</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3641,7 +3641,7 @@ tr.best .sym{color:var(--green);}
     <th>PRICE</th><th>MCAP</th><th>vs 50D</th><th>FROM HI</th><th>52W POS</th><th>RATING</th>
   </tr></thead><tbody id="body"><tr><td colspan="9" class="empty">Scanning…</td></tr></tbody></table>
 </div>
-<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R14</span></div>
+<div class="foot">Scans the most-liquid US stocks with market cap ≥ chosen min &middot; 5 plays scanned across the market &middot; each tab shows the top 10 with an entry RATING of 1-10 (10 = most perfect); top 3 highlighted &middot; source: FMP &middot; educational heuristic, not financial advice &middot; <span style="color:var(--green)">build R15</span></div>
 <script>
 var FMP="https://financialmodelingprep.com", FMP_KEY="gJ8bLkGOLrG94aqb8cJtDD1LLJt6Z2jZ";
 var LIMIT=800, MINCAP=1e9, DATA=[], busy=false;
@@ -3730,7 +3730,48 @@ function render(){
   }
   document.getElementById("body").innerHTML=out;
 }
+// FAST PATH (FMP Ultimate): screen the whole market, then batch full quotes
+// (which already include 50/200-day MAs + 52-wk range) — no per-stock history.
 function loadEntries(){
+  if(busy)return;busy=true;DATA=[];CAPS={};render();
+  var t0=Date.now();
+  try{
+    setStatus("Screening US market (cap ≥ "+capf(MINCAP)+")…",false);
+    fmpJSON("/api/v3/stock-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=3&exchange=NYSE,NASDAQ,AMEX&isActivelyTrading=true&limit=5000")
+    .catch(function(){return fmpJSON("/stable/company-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=3&isActivelyTrading=true&limit=5000");})
+    .then(function(list){
+      list=Array.isArray(list)?list:[];
+      if(!list.length)throw new Error("screener returned no rows");
+      list.sort(function(a,b){return (pnum(b.volume)||0)-(pnum(a.volume)||0);});
+      var nameMap={};list.forEach(function(x){nameMap[x.symbol]=x.companyName||x.name||"";});
+      var syms=list.map(function(x){return x.symbol;}).filter(Boolean).slice(0,1500);
+      var chunks=chunk(syms,100),done=0,total=syms.length;
+      setStatus("Analyzing "+total+" names…",false);
+      return pool(chunks,function(c){
+        return fmpJSON("/api/v3/quote/"+c.join(",")).catch(function(){return fmpJSON("/stable/batch-quote?symbols="+c.join(","));}).then(function(a){
+          (Array.isArray(a)?a:[]).forEach(function(q){
+            var sym=q.symbol;if(!sym)return;
+            var mc=pnum(q.marketCap);if(mc!=null)CAPS[sym]=mc;
+            var o={tk:sym,name:nameMap[sym]||q.name||"",price:pnum(q.price),ma50:pnum(q.priceAvg50),ma200:pnum(q.priceAvg200),hi52:pnum(q.yearHigh),lo52:pnum(q.yearLow),chg:pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage),vol:pnum(q.volume),avgVol:pnum(q.avgVolume)};
+            if(computeAll(o))DATA.push(o);
+          });
+          done+=c.length;
+          setStatus("Analyzing "+Math.min(done,total)+"/"+total+" · "+DATA.length+" ranked · "+Math.round((Date.now()-t0)/1000)+"s",false);render();
+        }).catch(function(){});
+      },6).then(function(){
+        busy=false;render();
+        if(!DATA.length){setStatus("Quotes lacked MA data — switching to backup method…",true);loadEntriesYahoo();}
+        else setStatus("✓ "+DATA.length+" ranked · whole market, cap ≥ "+capf(MINCAP)+" · "+Math.round((Date.now()-t0)/1000)+"s",false);
+      });
+    }).catch(function(e){
+      busy=false;
+      setStatus("Screener unavailable ("+e.message+") — using backup method…",true);
+      loadEntriesYahoo();
+    });
+  }catch(err){busy=false;setStatus("Error: "+err.message+" — hit RESCAN",true);}
+}
+// BACKUP PATH: curated universe + Yahoo 1-yr history (slower, no FMP screener needed).
+function loadEntriesYahoo(){
   if(busy)return;busy=true;DATA=[];CAPS={};render();
   try{
     var uni={};
