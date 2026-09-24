@@ -729,7 +729,7 @@ body {
 
 <!-- FLOATING MOVERS BUTTON (fixed, centered, always visible) -->
 <button id="moversFab" onclick="openMovers()"
-  style="position:fixed;top:34px;left:50%;transform:translateX(-50%);z-index:99999;
+  style="position:fixed;top:34px;left:50%;transform:translateX(-50%);z-index:8000;
          background:var(--amber);color:#07090f;font-weight:bold;font-family:var(--font);
          font-size:14px;letter-spacing:2px;border:2px solid #fff;border-radius:7px;
          padding:9px 26px;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.7)">
@@ -1462,6 +1462,36 @@ async function priceTarget(t) {
     } catch (e) { /* try next */ }
   }
   return null;
+}
+// ═══ LIVE EARNINGS CALENDAR (FMP) ═══
+// The CATALYSTS earnings dates were hand-entered for one season and go stale;
+// pull the real upcoming dates for every watchlist ticker and merge them in.
+let liveEarnLoaded = false, liveEarnStatus = '';
+async function loadLiveEarnings() {
+  const f = d => d.toISOString().slice(0, 10);
+  const from = new Date(), to = new Date(Date.now() + 60 * 86400000);
+  let arr = [];
+  try { arr = await fmpGet(`/stable/earnings-calendar?from=${f(from)}&to=${f(to)}`); }
+  catch (e) { try { arr = await fmpGet(`/api/v3/earning_calendar?from=${f(from)}&to=${f(to)}`); } catch (e2) {} }
+  if (!Array.isArray(arr) || !arr.length) { liveEarnStatus = 'Could not load the live earnings calendar from FMP.'; return 0; }
+  const mine = new Map(STOCKS.map(s => [s.t, s]));
+  const today = f(new Date());
+  let n = 0;
+  for (const x of arr) {
+    const s = mine.get(x.symbol); if (!s || !x.date) continue;
+    const list = (CATALYSTS[x.symbol] = CATALYSTS[x.symbol] || []);
+    // drop stale (past) hand-entered earnings; skip if this date is already there
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].type === 'earnings' && list[i].d < today) list.splice(i, 1);
+    if (list.some(c => c.type === 'earnings' && c.d === x.date)) continue;
+    const when = x.time === 'bmo' ? ' (before open)' : x.time === 'amc' ? ' (after close)' : '';
+    const eps  = x.epsEstimated != null ? ` · EPS est $${Number(x.epsEstimated).toFixed(2)}` : '';
+    const rev  = x.revenueEstimated ? ` · Rev est ${fmtMC(x.revenueEstimated)}` : '';
+    list.push({ d: x.date, type: 'earnings', text: `Earnings${when}${eps}${rev}`, impact: s.type === 'portfolio' || s.sc >= 80 ? 'high' : 'med', live: true });
+    n++;
+  }
+  liveEarnLoaded = true;
+  liveEarnStatus = `Live FMP calendar · ${n} watchlist earnings in the next 60 days`;
+  return n;
 }
 async function revalidate(list) {
   const tickers = list || STOCKS.map(s => s.t);
@@ -2499,6 +2529,10 @@ function simulateEarningsPlay(ticker, curPrice, earnDate) {
 }
 
 function showEarningsPlays() {
+  if (!liveEarnLoaded) { loadLiveEarnings().catch(() => {}).finally(() => _showEarningsPlays()); return; }
+  _showEarningsPlays();
+}
+function _showEarningsPlays() {
   const now = new Date();
   const earnings = [];
 
@@ -2532,7 +2566,7 @@ function showEarningsPlays() {
       <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:linear-gradient(135deg,#2a0a3a,#0a1a3a);border-bottom:1px solid #a78bfa">
         <div>
           <div style="font-size:18px;font-weight:bold;color:#c4b5fd">🎰 Earnings Plays — Cheap Call Options (10x–100x Potential)</div>
-          <div style="font-size:11px;color:var(--t3);margin-top:2px">${plays.length} upcoming earnings in next 30 days · Theoretical OTM calls · Simulated via Black-Scholes + historical earnings moves</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:2px">${plays.length} upcoming earnings in next 30 days${liveEarnLoaded ? ' (live FMP calendar)' : ''} · Theoretical OTM calls · Simulated via Black-Scholes + historical earnings moves</div>
         </div>
         <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:1px solid var(--border);color:var(--t2);font-size:18px;cursor:pointer;padding:4px 10px;border-radius:4px">✕</button>
       </div>
@@ -2548,7 +2582,7 @@ function showEarningsPlays() {
       <div style="padding:12px 20px">`;
 
   if (plays.length === 0) {
-    html += `<div style="text-align:center;padding:40px;color:var(--t3);font-size:12px">No earnings found in the next 30 days with live price data.</div>`;
+    html += `<div style="text-align:center;padding:40px;color:var(--t3);font-size:12px">No watchlist earnings in the next 30 days.<br><span style="font-size:10px">${liveEarnStatus || 'Earnings calendar not loaded yet.'}</span></div>`;
   } else {
     plays.forEach(p => {
       const impactClr = p.impact === 'high' ? '#f55' : p.impact === 'med' ? '#fa0' : '#8af';
@@ -3978,6 +4012,7 @@ function openEntries(){
   // Fetch commodities + render macro events + earnings calendar
   renderMacroEvents();
   renderEarningsCalendar();
+  loadLiveEarnings().then(() => renderEarningsCalendar()).catch(() => {});
   fetchCommodities();
 
   // Fetch history for selected stock immediately
