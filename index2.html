@@ -3506,7 +3506,7 @@ tr[data-tk]:hover{background:var(--bg3);}
 <body>
 <div class="top">
   <div class="dot"></div>
-  <div class="title">MARKET MOVERS</div>
+  <div class="title">MARKET MOVERS <span style="font-size:10px;color:var(--t2)">R21</span></div>
   <div class="meta" id="updated">Loading…</div>
   <div id="status">Init</div>
   <div class="spacer"></div>
@@ -3540,7 +3540,7 @@ tr[data-tk]:hover{background:var(--bg3);}
     </tr></thead><tbody id="loseBody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody></table>
   </div>
 </div>
-<div class="foot">Whole-market top movers (FMP biggest gainers/losers/actives) + your watchlist &middot; 1D from FMP; 1W/2W/4W computed from daily closes (Yahoo v8) &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R20</span></div>
+<div class="foot">Whole US market, stocks only (no ETFs), cap ≥ chosen min &middot; 1D = live FMP quotes (refresh every 60s) &middot; 1W/4W = FMP price change &middot; 2W from daily closes for top movers &middot; gainers = up only, losers = down only &middot; click a row to load it &middot; <span style="color:var(--amber)">build R21</span></div>
 <script>
 var UNIVERSE=[], NAMES={}, uset={};
 try{ if(window.opener&&window.opener.SCAN_UNIVERSE)window.opener.SCAN_UNIVERSE.forEach(function(s){uset[s]=1;}); }catch(e){}
@@ -3561,7 +3561,7 @@ function pnum(v){if(typeof v==="string")v=parseFloat(v.replace(/[()%,\\s]/g,""))
 function vol(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n);}
 function capf(n){n=Number(n);if(!n||isNaN(n))return "—";if(n>=1e12)return "$"+(n/1e12).toFixed(2)+"T";if(n>=1e9)return "$"+(n/1e9).toFixed(1)+"B";if(n>=1e6)return "$"+(n/1e6).toFixed(0)+"M";return "$"+n;}
 var MINCAP=1e9;
-function setCap(v){MINCAP=Number(v)||0;render();}
+function setCap(v){MINCAP=Number(v)||0;BYSYM={};DATA=[];LAST_SLOW=0;render();loadAll();}
 function fmpQuotes(syms){
   var chunks=[];for(var i=0;i<syms.length;i+=50)chunks.push(syms.slice(i,i+50));
   return Promise.all(chunks.map(function(c){
@@ -3657,7 +3657,88 @@ function loadHistory(){
     });
   },10);
 }
+// ── FAST PATH (FMP Ultimate): whole-market screen + batched live quotes ──
+var LAST_SLOW=0, SLOW_MS=15*60*1000, LASTTS=0, SCANNED=0;
+var WL=[];try{if(window.opener&&window.opener.STOCKS)WL=window.opener.STOCKS.map(function(s){return s.t;});}catch(e){}
+function chunkArr(a,n){var o=[];for(var i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o;}
+function asOf(){if(!LASTTS)return "";var d=new Date(LASTTS*1000);var old=(Date.now()-d.getTime())>3600000;return " · prices as of "+d.toLocaleString("en-US",{weekday:"short",hour:"2-digit",minute:"2-digit"})+(old?" (last session)":"");}
 function loadAll(){
+  if(busy)return;busy=true;
+  var t0=Date.now();
+  setStatus("Screening US market (cap ≥ "+capf(MINCAP)+", stocks only)…",false);
+  fmpJSON("/api/v3/stock-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=2&exchange=NYSE,NASDAQ,AMEX&isActivelyTrading=true&isEtf=false&isFund=false&limit=6000")
+  .catch(function(){return fmpJSON("/stable/company-screener?marketCapMoreThan="+MINCAP+"&priceMoreThan=2&isActivelyTrading=true&isEtf=false&isFund=false&limit=6000");})
+  .then(function(list){
+    list=Array.isArray(list)?list:[];
+    if(!list.length)throw new Error("screener returned no rows");
+    list.sort(function(a,b){return (pnum(b.volume)||0)-(pnum(a.volume)||0);});
+    var names={},caps={};list.forEach(function(x){names[x.symbol]=x.companyName||x.name||"";caps[x.symbol]=pnum(x.marketCap);});
+    var syms=list.map(function(x){return x.symbol;}).filter(Boolean).slice(0,2500);
+    WL.forEach(function(t){if(syms.indexOf(t)<0)syms.push(t);});
+    SCANNED=syms.length;
+    var done=0;
+    setStatus("Live quotes 0/"+syms.length+"…",false);
+    return pool(chunkArr(syms,100),function(c){
+      return fmpJSON("/api/v3/quote/"+c.join(",")).catch(function(){return fmpJSON("/stable/batch-quote?symbols="+c.join(","));}).then(function(a){
+        (Array.isArray(a)?a:[]).forEach(function(q){
+          var sym=q.symbol;if(!sym)return;var o=ensure(sym);
+          o.name=names[sym]||q.name||o.name;
+          var p=pnum(q.price);if(p!=null)o.price=p;
+          var mc=pnum(q.marketCap);o.cap=(mc!=null?mc:(caps[sym]!=null?caps[sym]:o.cap));
+          var v=pnum(q.volume);if(v!=null)o.vol=v;
+          var pct=pnum(q.changesPercentage!=null?q.changesPercentage:q.changePercentage);if(pct!=null)o.r["1D"]=pct;
+          var ts=pnum(q.timestamp);if(ts&&ts>LASTTS)LASTTS=ts;
+        });
+        done+=c.length;
+        setStatus("Live quotes "+Math.min(done,syms.length)+"/"+syms.length+" · "+Math.round((Date.now()-t0)/1000)+"s",false);
+        syncData();render();
+      }).catch(function(){});
+    },6).then(function(){return syms;});
+  })
+  .then(function(syms){
+    busy=false;syncData();stamp();render();
+    setStatus("✓ "+SCANNED+" stocks scanned in "+Math.round((Date.now()-t0)/1000)+"s"+asOf(),false);
+    if(Date.now()-LAST_SLOW>SLOW_MS){LAST_SLOW=Date.now();return loadSlow(syms);}
+  })
+  .catch(function(e){busy=false;setStatus("Market scan unavailable ("+e.message+") — using backup list…",true);loadAllYahoo();});
+}
+// 1W (5D) and 4W (1M) from FMP price-change in batches; 2W from daily history for top candidates
+function loadSlow(syms){
+  setStatus("Loading 1-week / 4-week changes…",false);
+  return pool(chunkArr(syms,100),function(c){
+    return fmpJSON("/api/v3/stock-price-change/"+c.join(",")).then(function(a){
+      (Array.isArray(a)?a:[]).forEach(function(x){var o=BYSYM[x.symbol];if(!o)return;var w=pnum(x["5D"]),m=pnum(x["1M"]);if(w!=null)o.r["1W"]=w;if(m!=null)o.r["4W"]=m;});
+      syncData();render();
+    }).catch(function(){});
+  },6).then(function(){
+    syncData();
+    var cand={};
+    function top(k,dir,n){DATA.filter(function(o){return o.r[k]!=null&&(o.cap==null||o.cap>=MINCAP);}).sort(function(a,b){return dir*(b.r[k]-a.r[k]);}).slice(0,n).forEach(function(o){cand[o.tk]=1;});}
+    ["1D","1W","4W"].forEach(function(k){top(k,1,50);top(k,-1,50);});
+    var list=Object.keys(cand),done=0;
+    setStatus("Computing 2-week moves for "+list.length+" top movers…",false);
+    return pool(list,function(sym){return fetch2W(sym).then(function(r){done++;if(r!=null&&BYSYM[sym])BYSYM[sym].r["2W"]=r;if(done%10===0)render();});},10);
+  }).then(function(){syncData();render();stamp();setStatus("✓ "+SCANNED+" stocks · all timeframes loaded"+asOf(),false);});
+}
+function fetch2W(sym){
+  var from=new Date(Date.now()-40*86400000).toISOString().slice(0,10);
+  var today=new Date().toISOString().slice(0,10);
+  return fmpJSON("/stable/historical-price-eod/light?symbol="+sym+"&from="+from)
+    .catch(function(){return fmpJSON("/api/v3/historical-price-full/"+sym+"?serietype=line&timeseries=30");})
+    .then(function(j){
+      var h=(Array.isArray(j)?j:((j&&j.historical)||[])).slice();
+      h.sort(function(a,b){return a.date<b.date?1:-1;});               // newest first
+      var closes=h.map(function(x){return pnum(x.price!=null?x.price:x.close);}).filter(function(v){return v!=null;});
+      if(closes.length<12)return null;
+      var o=BYSYM[sym],last=(o&&o.price)||closes[0];
+      var base=(h[0]&&h[0].date===today)?0:-1;                           // today's bar present?
+      if(o&&o.r["1W"]==null)o.r["1W"]=(last/closes[5+base]-1)*100;
+      if(o&&o.r["4W"]==null&&closes.length>20+base)o.r["4W"]=(last/closes[20+base]-1)*100;
+      return (last/closes[10+base]-1)*100;
+    }).catch(function(){return null;});
+}
+// ── BACKUP PATH: curated universe via Yahoo (only if the FMP screener fails) ──
+function loadAllYahoo(){
   if(busy)return;busy=true;
   BYSYM={};DATA=[];render();
   UNIVERSE.forEach(function(sym){ensure(sym);});
@@ -3678,10 +3759,10 @@ function loadAll(){
 function setTF(tf){TF=tf;var t=document.querySelectorAll(".tf");for(var i=0;i<t.length;i++){t[i].className="tf"+(t[i].getAttribute("data-tf")===tf?" active":"");}render();}
 function pick(tk){try{if(window.opener&&!window.opener.closed&&window.opener.loadTickerFromMovers){window.opener.loadTickerFromMovers(tk);}}catch(e){}}
 document.getElementById("tfTabs").addEventListener("click",function(e){var b=e.target.closest(".tf");if(b)setTF(b.getAttribute("data-tf"));});
-document.getElementById("refreshBtn").addEventListener("click",loadAll);
+document.getElementById("refreshBtn").addEventListener("click",function(){LAST_SLOW=0;loadAll();});
 ["gainBody","loseBody"].forEach(function(id){var b=document.getElementById(id);if(b)b.addEventListener("click",function(e){var tr=e.target.closest("tr");if(tr&&tr.getAttribute("data-tk"))pick(tr.getAttribute("data-tk"));});});
 loadAll();
-timer=setInterval(loadAll,120000);
+timer=setInterval(loadAll,60000);
 <\/script>
 </body></html>`;
 
